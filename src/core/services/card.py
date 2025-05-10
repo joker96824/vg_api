@@ -1,7 +1,7 @@
 from typing import List, Optional, Tuple
 from sqlalchemy import select, and_, or_, func
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 import logging
 
@@ -22,24 +22,54 @@ class CardService:
 
         # 构建查询条件
         conditions = []
-        if params.card_code:
-            conditions.append(Card.card_code.ilike(f"%{params.card_code}%"))
-        if params.name_cn:
-            conditions.append(Card.name_cn.ilike(f"%{params.name_cn}%"))
-        if params.name_en:
-            conditions.append(Card.name_en.ilike(f"%{params.name_en}%"))
-        if params.card_type:
-            conditions.append(Card.card_type == params.card_type)
-        if params.trigger_type:
-            conditions.append(Card.trigger_type == params.trigger_type)
-        if params.grade is not None:
-            conditions.append(Card.grade == params.grade)
-        if params.race:
-            conditions.append(Card.race == params.race)
+        
+        # 关键词搜索
+        if params.keyword:
+            keyword_conditions = [
+                Card.card_code.ilike(f"%{params.keyword}%"),
+                Card.name_cn.ilike(f"%{params.keyword}%"),
+                Card.name_jp.ilike(f"%{params.keyword}%"),
+                Card.nation.ilike(f"%{params.keyword}%"),
+                Card.clan.ilike(f"%{params.keyword}%"),
+                Card.skill.ilike(f"%{params.keyword}%"),
+                Card.ability.ilike(f"%{params.keyword}%"),
+                Card.remark.ilike(f"%{params.keyword}%")
+            ]
+            conditions.append(or_(*keyword_conditions))
+
+        # 精确匹配条件
         if params.nation:
             conditions.append(Card.nation == params.nation)
         if params.clan:
             conditions.append(Card.clan == params.clan)
+        if params.grade is not None:
+            conditions.append(Card.grade == params.grade)
+        if params.card_type:
+            conditions.append(Card.card_type == params.card_type)
+        if params.trigger_type:
+            conditions.append(Card.trigger_type == params.trigger_type)
+        if params.special_mark:
+            conditions.append(Card.special_mark == params.special_mark)
+
+        # 技能和能力关键词搜索
+        if params.skill:
+            conditions.append(Card.skill.ilike(f"%{params.skill}%"))
+        if params.ability:
+            conditions.append(Card.ability.ilike(f"%{params.ability}%"))
+
+        # 范围查询
+        if params.card_power_min is not None:
+            conditions.append(Card.card_power >= params.card_power_min)
+        if params.card_power_max is not None:
+            conditions.append(Card.card_power <= params.card_power_max)
+        if params.shield_min is not None:
+            conditions.append(Card.shield >= params.shield_min)
+        if params.shield_max is not None:
+            conditions.append(Card.shield <= params.shield_max)
+
+        # 卡包查询
+        if params.package:
+            conditions.append(CardRarity.pack_name == params.package)
 
         logger.debug(f"查询条件: {conditions}")
 

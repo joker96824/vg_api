@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
+from fastapi import Query
 
 class CardRarityBase(BaseModel):
     """卡牌稀有度基础模型"""
@@ -32,18 +33,26 @@ class CardRarityInDB(CardRarityBase):
 
 class CardBase(BaseModel):
     """卡牌基础模型"""
-    card_code: str = Field(..., description="卡牌编号")
+    card_code: str = Field(..., description="卡牌代码")
+    card_link: str = Field(..., description="卡牌链接")
+    card_number: Optional[str] = Field(None, description="卡牌编号")
+    card_rarity: Optional[str] = Field(None, description="卡牌罕贵度")
     name_cn: str = Field(..., description="中文名称")
-    name_en: Optional[str] = Field(None, description="英文名称")
-    card_type: str = Field(..., description="卡牌类型")
-    trigger_type: Optional[str] = Field(None, description="触发类型")
-    card_power: Optional[int] = Field(None, description="力量值")
+    name_jp: Optional[str] = Field(None, description="日文名称")
+    nation: Optional[str] = Field(None, description="所属国家")
+    clan: Optional[str] = Field(None, description="所属种族")
     grade: Optional[int] = Field(None, description="等级")
-    race: Optional[str] = Field(None, description="种族")
-    nation: Optional[str] = Field(None, description="国家")
-    clan: Optional[str] = Field(None, description="势力")
-    skill: Optional[str] = Field(None, description="技能描述")
-    flavor_text: Optional[str] = Field(None, description="卡牌描述")
+    skill: Optional[str] = Field(None, description="技能")
+    card_power: Optional[int] = Field(None, description="力量值")
+    shield: Optional[int] = Field(None, description="护盾值")
+    critical: Optional[int] = Field(None, description="暴击值")
+    special_mark: Optional[str] = Field(None, description="特殊标识")
+    card_type: Optional[str] = Field(None, description="卡片类型")
+    trigger_type: Optional[str] = Field(None, description="触发类型")
+    ability: Optional[str] = Field(None, description="能力描述")
+    card_alias: Optional[str] = Field(None, description="卡牌别称")
+    card_group: Optional[str] = Field(None, description="所属集团")
+    ability_json: Optional[Dict[str, Any]] = Field(None, description="卡牌技能效果JSON数据，包含主动技能、自动技能和持续技能的效果信息")
     image_url: Optional[str] = Field(None, description="图片URL")
     card_thumbnail_url: Optional[str] = Field(None, description="缩略图URL")
     card_updated_at: Optional[datetime] = Field(None, description="更新时间")
@@ -82,14 +91,41 @@ class CardListResponse(BaseModel):
 
 class CardQueryParams(BaseModel):
     """卡牌查询参数"""
-    card_code: Optional[str] = Field(None, description="卡牌编号")
-    name_cn: Optional[str] = Field(None, description="中文名称")
-    name_en: Optional[str] = Field(None, description="英文名称")
-    card_type: Optional[str] = Field(None, description="卡牌类型")
-    trigger_type: Optional[str] = Field(None, description="触发类型")
-    grade: Optional[int] = Field(None, description="等级")
-    race: Optional[str] = Field(None, description="种族")
+    keyword: Optional[str] = Field(None, description="关键词搜索（搜索范围：卡牌编号、中文名称、日文名称、国家、势力、技能、卡牌描述、备注）")
     nation: Optional[str] = Field(None, description="国家")
     clan: Optional[str] = Field(None, description="势力")
+    grade: Optional[int] = Field(None, description="等级")
+    skill: Optional[str] = Field(None, description="技能关键词")
+    ability: Optional[str] = Field(None, description="能力描述关键词")
+    card_power_min: Optional[int] = Field(None, description="力量值最小值")
+    card_power_max: Optional[int] = Field(None, description="力量值最大值")
+    shield_min: Optional[int] = Field(None, description="护盾值最小值")
+    shield_max: Optional[int] = Field(None, description="护盾值最大值")
+    special_mark: Optional[str] = Field(None, description="特殊标记")
+    card_type: Optional[str] = Field(None, description="卡牌类型")
+    trigger_type: Optional[str] = Field(None, description="触发类型")
+    package: Optional[str] = Field(None, description="卡包名称")
     page: int = Field(1, description="页码")
-    page_size: int = Field(20, description="每页数量") 
+    page_size: int = Field(20, description="每页数量")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "keyword": "基元",
+                "nation": "圣域联合王国",
+                "clan": "皇家骑士团",
+                "grade": 3,
+                "skill": "支援",
+                "ability": "支援",
+                "card_power_min": 5000,
+                "card_power_max": 10000,
+                "shield_min": 0,
+                "shield_max": 15000,
+                "special_mark": "双判",
+                "card_type": "单位",
+                "trigger_type": "暴击",
+                "package": "BT01",
+                "page": 1,
+                "page_size": 20
+            }
+        } 

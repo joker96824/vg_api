@@ -2,14 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config.settings import settings
 from .api.v1.api import api_router
-import logging
+from .core.logging import root_logger  # 导入日志配置
 
-# 配置日志
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format=settings.LOG_FORMAT
-)
-logger = logging.getLogger(__name__)
+logger = root_logger.getChild(__name__)
 
 app = FastAPI(
     title=settings.APP_NAME,
