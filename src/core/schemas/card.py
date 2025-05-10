@@ -99,8 +99,7 @@ class CardQueryParams(BaseModel):
     ability: Optional[str] = Field(None, description="能力描述关键词")
     card_power_min: Optional[int] = Field(None, description="力量值最小值")
     card_power_max: Optional[int] = Field(None, description="力量值最大值")
-    shield_min: Optional[int] = Field(None, description="护盾值最小值")
-    shield_max: Optional[int] = Field(None, description="护盾值最大值")
+    shield: Optional[int] = Field(None, description="护盾值")
     special_mark: Optional[str] = Field(None, description="特殊标记")
     card_type: Optional[str] = Field(None, description="卡牌类型")
     trigger_type: Optional[str] = Field(None, description="触发类型")
@@ -119,8 +118,7 @@ class CardQueryParams(BaseModel):
                 "ability": "支援",
                 "card_power_min": 5000,
                 "card_power_max": 10000,
-                "shield_min": 0,
-                "shield_max": 15000,
+                "shield": 0,
                 "special_mark": "双判",
                 "card_type": "单位",
                 "trigger_type": "暴击",

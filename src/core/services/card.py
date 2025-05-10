@@ -62,10 +62,10 @@ class CardService:
             conditions.append(Card.card_power >= params.card_power_min)
         if params.card_power_max is not None:
             conditions.append(Card.card_power <= params.card_power_max)
-        if params.shield_min is not None:
-            conditions.append(Card.shield >= params.shield_min)
-        if params.shield_max is not None:
-            conditions.append(Card.shield <= params.shield_max)
+
+        # 盾值查询
+        if params.shield:
+            conditions.append(Card.shield == params.shield)
 
         # 卡包查询
         if params.package:
