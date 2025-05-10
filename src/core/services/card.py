@@ -39,17 +39,17 @@ class CardService:
 
         # 精确匹配条件
         if params.nation:
-            conditions.append(Card.nation == params.nation)
+            conditions.append(Card.nation.ilike(f"%{params.nation}%"))
         if params.clan:
-            conditions.append(Card.clan == params.clan)
+            conditions.append(Card.clan.ilike(f"%{params.clan}%"))
         if params.grade is not None:
             conditions.append(Card.grade == params.grade)
         if params.card_type:
-            conditions.append(Card.card_type == params.card_type)
+            conditions.append(Card.card_type.ilike(f"%{params.card_type}%"))
         if params.trigger_type:
-            conditions.append(Card.trigger_type == params.trigger_type)
+            conditions.append(Card.trigger_type.ilike(f"%{params.trigger_type}%"))
         if params.special_mark:
-            conditions.append(Card.special_mark == params.special_mark)
+            conditions.append(Card.special_mark.ilike(f"%{params.special_mark}%"))
 
         # 技能和能力关键词搜索
         if params.skill:
