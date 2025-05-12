@@ -69,7 +69,7 @@ class CardService:
 
         # 卡包查询
         if params.package:
-            conditions.append(CardRarity.pack_name == params.package)
+            conditions.append(Card.card_number.ilike(f"%{params.package}%"))
 
         logger.debug(f"查询条件: {conditions}")
 
