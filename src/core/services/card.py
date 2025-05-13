@@ -58,10 +58,10 @@ class CardService:
             conditions.append(Card.ability.ilike(f"%{params.ability}%"))
 
         # 范围查询
-        if params.card_power_min is not None:
-            conditions.append(Card.card_power >= params.card_power_min)
-        if params.card_power_max is not None:
-            conditions.append(Card.card_power <= params.card_power_max)
+        if params.card_power_min is not None and params.card_power_max is not None:
+            if params.card_power_min != 0 or params.card_power_max != 20000:
+                conditions.append(Card.card_power >= params.card_power_min)
+                conditions.append(Card.card_power <= params.card_power_max)
 
         # 盾值查询
         if params.shield:
