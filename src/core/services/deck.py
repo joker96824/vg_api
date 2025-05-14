@@ -26,13 +26,21 @@ class DeckService:
             deck_description=deck.deck_description,
             is_public=deck.is_public,
             is_official=deck.is_official,
-            format_type=deck.format_type,
+            preset=deck.preset,
             deck_version=deck.deck_version,
             remark=deck.remark
         )
         self.db.add(db_deck)
         await self.db.commit()
-        await self.db.refresh(db_deck)
+        
+        # 重新查询以加载关系
+        result = await self.db.execute(
+            select(Deck)
+            .options(selectinload(Deck.deck_cards))
+            .where(Deck.id == db_deck.id)
+        )
+        db_deck = result.scalar_one()
+        
         return db_deck
 
     async def get_deck(self, deck_id: UUID) -> Optional[Deck]:
@@ -77,14 +85,13 @@ class DeckService:
 
         return total, decks
 
-    async def update_deck(self, deck_id: UUID, deck: DeckUpdate, deck_cards: List[DeckCardCreate]) -> Optional[Deck]:
+    async def update_deck(self, deck_id: UUID, deck: DeckUpdate) -> Optional[Deck]:
         """更新卡组及其卡片列表"""
         db_deck = await self.get_deck(deck_id)
         if not db_deck:
             return None
-
         # 更新卡组基本信息
-        update_data = deck.model_dump(exclude_unset=True)
+        update_data = deck.model_dump(exclude_unset=True, exclude={'deck_cards'})
         for field, value in update_data.items():
             setattr(db_deck, field, value)
 
@@ -94,18 +101,20 @@ class DeckService:
             card.update_time = datetime.now()
 
         # 添加新的卡片
-        for card_data in deck_cards:
+        for card_data in deck.deck_cards:
             db_deck_card = DeckCard(
                 deck_id=deck_id,
                 card_id=card_data.card_id,
-                card_rarity_id=card_data.card_rarity_id,
+                image=card_data.image,
                 quantity=card_data.quantity,
                 deck_zone=card_data.deck_zone,
                 position=card_data.position,
                 remark=card_data.remark
             )
             self.db.add(db_deck_card)
-
+        print("--------------------------------")
+        print(f"添加新的卡片: {deck.deck_cards}")
+        print("--------------------------------")
         db_deck.update_time = datetime.now()
         await self.db.commit()
         await self.db.refresh(db_deck)
@@ -134,7 +143,7 @@ class DeckCardService:
         db_deck_card = DeckCard(
             deck_id=deck_card.deck_id,
             card_id=deck_card.card_id,
-            card_rarity_id=deck_card.card_rarity_id,
+            image=deck_card.image,
             quantity=deck_card.quantity,
             deck_zone=deck_card.deck_zone,
             position=deck_card.position,
@@ -144,71 +153,3 @@ class DeckCardService:
         await self.db.commit()
         await self.db.refresh(db_deck_card)
         return db_deck_card
-
-    async def get_deck_card(self, deck_card_id: UUID) -> Optional[DeckCard]:
-        """获取卡组卡片详情"""
-        result = await self.db.execute(
-            select(DeckCard).where(
-                and_(
-                    DeckCard.id == deck_card_id,
-                    DeckCard.is_deleted == False
-                )
-            )
-        )
-        return result.scalar_one_or_none()
-
-    async def get_deck_cards(self, params: DeckCardQueryParams) -> tuple[int, List[DeckCard]]:
-        """获取卡组卡片列表"""
-        # 构建查询条件
-        conditions = [DeckCard.is_deleted == False]
-        if params.deck_id:
-            conditions.append(DeckCard.deck_id == params.deck_id)
-        if params.card_id:
-            conditions.append(DeckCard.card_id == params.card_id)
-        if params.card_rarity_id:
-            conditions.append(DeckCard.card_rarity_id == params.card_rarity_id)
-        if params.deck_zone:
-            conditions.append(DeckCard.deck_zone == params.deck_zone)
-
-        # 计算总数
-        total = await self.db.scalar(
-            select(func.count()).select_from(DeckCard).where(and_(*conditions))
-        )
-
-        # 获取分页数据
-        result = await self.db.execute(
-            select(DeckCard)
-            .where(and_(*conditions))
-            .order_by(DeckCard.position)
-            .offset((params.page - 1) * params.page_size)
-            .limit(params.page_size)
-        )
-        deck_cards = result.scalars().all()
-
-        return total, deck_cards
-
-    async def update_deck_card(self, deck_card_id: UUID, deck_card: DeckCardUpdate) -> Optional[DeckCard]:
-        """更新卡组卡片"""
-        db_deck_card = await self.get_deck_card(deck_card_id)
-        if not db_deck_card:
-            return None
-
-        update_data = deck_card.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            setattr(db_deck_card, field, value)
-
-        db_deck_card.update_time = datetime.now()
-        await self.db.commit()
-        await self.db.refresh(db_deck_card)
-        return db_deck_card
-
-    async def delete_deck_card(self, deck_card_id: UUID) -> bool:
-        """删除卡组卡片（软删除）"""
-        db_deck_card = await self.get_deck_card(deck_card_id)
-        if not db_deck_card:
-            return False
-
-        db_deck_card.is_deleted = True
-        db_deck_card.update_time = datetime.now()
-        await self.db.commit()
-        return True
