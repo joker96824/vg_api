@@ -67,12 +67,11 @@ async def get_decks(
 async def update_deck(
     deck_id: UUID,
     deck: DeckUpdate,
-    deck_cards: List[DeckCardCreate],
     session: AsyncSession = Depends(get_session)
 ):
     """更新指定卡组的信息和卡片列表"""
     deck_service = DeckService(session)
-    updated_deck = await deck_service.update_deck(deck_id, deck, deck_cards)
+    updated_deck = await deck_service.update_deck(deck_id, deck)
     if not updated_deck:
         raise HTTPException(status_code=404, detail="卡组不存在")
     return updated_deck

@@ -81,7 +81,6 @@ class CardRarity(Base):
 
     # 关系
     card: Mapped["Card"] = relationship("Card", back_populates="rarity_infos")
-    deck_cards: Mapped[List["DeckCard"]] = relationship("DeckCard", back_populates="card_rarity")
 
     # 唯一约束
     __table_args__ = (

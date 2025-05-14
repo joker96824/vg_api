@@ -7,7 +7,7 @@ from uuid import UUID
 class DeckCardBase(BaseModel):
     """卡组卡片基础模型"""
     card_id: UUID = Field(..., description="卡片ID")
-    card_rarity_id: Optional[UUID] = Field(None, description="卡片稀有度ID")
+    image: str = Field(..., description="图片链接")
     quantity: int = Field(1, ge=1, le=4, description="卡片数量(1-4)")
     deck_zone: str = Field("main", description="卡牌所在区域: main(主轴)/trigger(触发区)/gzone(G区)/etc")
     position: Optional[int] = Field(None, description="在卡组中的位置")
@@ -36,7 +36,6 @@ class DeckCardInDB(DeckCardBase):
 class DeckCardResponse(DeckCardInDB):
     """卡组卡片响应模型"""
     card: Optional[Dict[str, Any]] = Field(None, description="卡片信息")
-    card_rarity: Optional[Dict[str, Any]] = Field(None, description="卡片稀有度信息")
 
 # 查询参数模型
 class DeckQueryParams(BaseModel):
@@ -49,7 +48,7 @@ class DeckCardQueryParams(BaseModel):
     """卡组卡片查询参数模型"""
     deck_id: Optional[UUID] = Field(None, description="卡组ID")
     card_id: Optional[UUID] = Field(None, description="卡片ID")
-    card_rarity_id: Optional[UUID] = Field(None, description="卡片稀有度ID")
+    image: str = Field(..., description="图片链接")
     deck_zone: Optional[str] = Field(None, description="卡牌所在区域")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(10, ge=1, le=100, description="每页数量") 
@@ -61,7 +60,7 @@ class DeckBase(BaseModel):
     deck_description: Optional[str] = Field(None, description="卡组描述")
     is_public: bool = Field(False, description="是否公开")
     is_official: bool = Field(False, description="是否官方卡组")
-    format_type: Optional[str] = Field(None, description="卡组格式类型")
+    preset: int = Field(-1, description="预设卡组")
     deck_version: int = Field(1, description="版本号")
     remark: str = Field("", description="备注信息")
 
@@ -73,6 +72,7 @@ class DeckUpdate(DeckBase):
     """更新卡组请求模型"""
     deck_name: Optional[str] = Field(None, description="卡组名称")
     deck_version: Optional[int] = Field(None, description="版本号")
+    deck_cards: List[DeckCardCreate] = Field(default_factory=list, description="卡组卡牌列表")
 
 class DeckInDB(DeckBase):
     """数据库中的卡组模型"""
