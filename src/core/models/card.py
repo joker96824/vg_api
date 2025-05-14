@@ -61,6 +61,7 @@ class Card(Base):
 
     # 关系
     rarity_infos: Mapped[List["CardRarity"]] = relationship("CardRarity", back_populates="card", cascade="all, delete-orphan")
+    deck_cards: Mapped[List["DeckCard"]] = relationship("DeckCard", back_populates="card")
 
 
 class CardRarity(Base):
@@ -80,6 +81,7 @@ class CardRarity(Base):
 
     # 关系
     card: Mapped["Card"] = relationship("Card", back_populates="rarity_infos")
+    deck_cards: Mapped[List["DeckCard"]] = relationship("DeckCard", back_populates="card_rarity")
 
     # 唯一约束
     __table_args__ = (
