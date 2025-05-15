@@ -95,10 +95,9 @@ class DeckService:
         for field, value in update_data.items():
             setattr(db_deck, field, value)
 
-        # 删除原有的卡片
+        # 直接删除原有的卡片
         for card in db_deck.deck_cards:
-            card.is_deleted = True
-            card.update_time = datetime.now()
+            await self.db.delete(card)
 
         # 添加新的卡片
         for card_data in deck.deck_cards:
