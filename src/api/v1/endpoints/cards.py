@@ -2,6 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
+from uuid import UUID
 
 from src.core.database import get_session
 from src.core.schemas.card import CardResponse, CardQueryParams
@@ -27,26 +28,32 @@ async def get_cards(
 
     return cards
 
-@router.get("/cards/{card_id}", response_model=CardResponse)
+@router.get("/cards/{card_id}", response_model=List[CardResponse])
 async def get_card_by_id(
-    card_id: int,
+    card_id: str,
     session: AsyncSession = Depends(get_session)
 ):
     """
-    根据ID查询卡牌
+    根据ID查询卡牌，支持多个ID（用逗号分隔）
     """
     logger.debug(f"收到ID查询请求: {card_id}")
 
+    # 将逗号分隔的字符串转换为UUID列表
+    try:
+        card_ids = [UUID(id.strip()) for id in card_id.split(",")]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid card ID format")
+
     card_service = CardService(session)
-    card = await card_service.get_card_by_id(card_id)
+    cards = await card_service.get_cards_by_ids(card_ids)
     
-    if not card:
+    if not cards:
         logger.warning(f"未找到卡牌: {card_id}")
-        raise HTTPException(status_code=404, detail="Card not found")
+        raise HTTPException(status_code=404, detail="Cards not found")
 
-    logger.debug(f"查询结果: {card}")
+    logger.debug(f"查询结果: {cards}")
 
-    return card
+    return cards
 
 @router.get("/cards/code/{card_code}", response_model=CardResponse)
 async def get_card_by_code(

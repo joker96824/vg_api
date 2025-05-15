@@ -4,6 +4,7 @@ from sqlalchemy.sql import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 import logging
+from uuid import UUID
 
 from src.core.models.card import Card, CardRarity
 from src.core.schemas.card import CardQueryParams
@@ -95,7 +96,7 @@ class CardService:
 
         return cards, total
 
-    async def get_card_by_id(self, card_id: int) -> Optional[Card]:
+    async def get_card_by_id(self, card_id: UUID) -> Optional[Card]:
         """
         根据ID查询卡牌
         """
@@ -108,6 +109,20 @@ class CardService:
         logger.debug(f"查询结果: {card}")
 
         return card
+
+    async def get_cards_by_ids(self, card_ids: List[UUID]) -> List[Card]:
+        """
+        根据多个ID查询卡牌
+        """
+        logger.debug(f"查询卡牌ID列表: {card_ids}")
+
+        query = select(Card).options(selectinload(Card.rarity_infos)).where(Card.id.in_(card_ids))
+        result = await self.session.execute(query)
+        cards = result.scalars().all()
+
+        logger.debug(f"查询结果: {cards}")
+
+        return cards
 
     async def get_card_by_code(self, card_code: str) -> Optional[Card]:
         """
