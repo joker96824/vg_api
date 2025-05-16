@@ -130,6 +130,85 @@ class DeckService:
         await self.db.commit()
         return True
 
+    async def update_deck_info(self, deck_id: UUID, deck_name: str, deck_description: str) -> Optional[Deck]:
+        """更新卡组名称和描述"""
+        db_deck = await self.get_deck(deck_id)
+        if not db_deck:
+            return None
+            
+        db_deck.deck_name = deck_name
+        db_deck.deck_description = deck_description
+        db_deck.update_time = datetime.now()
+        
+        await self.db.commit()
+        await self.db.refresh(db_deck)
+        return db_deck
+
+    async def update_deck_preset(self, deck_id: UUID, preset: int) -> Optional[Deck]:
+        """更新卡组预设值"""
+        db_deck = await self.get_deck(deck_id)
+        if not db_deck:
+            return None
+            
+        db_deck.preset = preset
+        db_deck.update_time = datetime.now()
+        
+        await self.db.commit()
+        await self.db.refresh(db_deck)
+        return db_deck
+
+    async def copy_deck(self, user_id: UUID, deck_id: UUID) -> Optional[Deck]:
+        """复制卡组
+        Args:
+            user_id: 新卡组的所有者ID
+            deck_id: 要复制的卡组ID
+        Returns:
+            新创建的卡组对象，如果原卡组不存在则返回None
+        """
+        # 获取原卡组信息
+        original_deck = await self.get_deck(deck_id)
+        if not original_deck:
+            return None
+
+        # 创建新卡组
+        new_deck = Deck(
+            user_id=user_id,
+            deck_name=f"{original_deck.deck_name} (复制)",
+            deck_description=original_deck.deck_description,
+            is_public=original_deck.is_public,
+            is_official=original_deck.is_official,
+            preset=original_deck.preset,
+            deck_version=original_deck.deck_version,
+            remark=original_deck.remark
+        )
+        self.db.add(new_deck)
+        await self.db.commit()
+        await self.db.refresh(new_deck)
+
+        # 复制卡组卡片
+        for original_card in original_deck.deck_cards:
+            new_card = DeckCard(
+                deck_id=new_deck.id,
+                card_id=original_card.card_id,
+                image=original_card.image,
+                quantity=original_card.quantity,
+                deck_zone=original_card.deck_zone,
+                position=original_card.position,
+                remark=original_card.remark
+            )
+            self.db.add(new_card)
+
+        await self.db.commit()
+        
+        # 重新查询以加载关系
+        result = await self.db.execute(
+            select(Deck)
+            .options(selectinload(Deck.deck_cards))
+            .where(Deck.id == new_deck.id)
+        )
+        new_deck = result.scalar_one()
+        
+        return new_deck
 
 class DeckCardService:
     """卡组卡片服务"""

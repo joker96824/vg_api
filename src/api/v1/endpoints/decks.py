@@ -87,3 +87,46 @@ async def delete_deck(
     if not await deck_service.delete_deck(deck_id):
         raise HTTPException(status_code=404, detail="卡组不存在")
     return {"message": "卡组已删除"}
+
+
+@router.patch("/decks/{deck_id}/info", response_model=DeckResponse, summary="更新卡组名称和描述")
+async def update_deck_info(
+    deck_id: UUID,
+    deck_name: str = Query(..., description="新的卡组名称"),
+    deck_description: str = Query(..., description="新的卡组描述"),
+    session: AsyncSession = Depends(get_session)
+):
+    """更新卡组的名称和描述"""
+    deck_service = DeckService(session)
+    updated_deck = await deck_service.update_deck_info(deck_id, deck_name, deck_description)
+    if not updated_deck:
+        raise HTTPException(status_code=404, detail="卡组不存在")
+    return updated_deck
+
+
+@router.patch("/decks/{deck_id}/preset", response_model=DeckResponse, summary="更新卡组预设值")
+async def update_deck_preset(
+    deck_id: UUID,
+    preset: int = Query(..., description="新的预设值"),
+    session: AsyncSession = Depends(get_session)
+):
+    """更新卡组的预设值"""
+    deck_service = DeckService(session)
+    updated_deck = await deck_service.update_deck_preset(deck_id, preset)
+    if not updated_deck:
+        raise HTTPException(status_code=404, detail="卡组不存在")
+    return updated_deck
+
+
+@router.post("/decks/{deck_id}/copy", response_model=DeckResponse, summary="复制卡组")
+async def copy_deck(
+    deck_id: UUID,
+    user_id: UUID = Query(..., description="新卡组的所有者ID"),
+    session: AsyncSession = Depends(get_session)
+):
+    """复制指定卡组"""
+    deck_service = DeckService(session)
+    new_deck = await deck_service.copy_deck(user_id, deck_id)
+    if not new_deck:
+        raise HTTPException(status_code=404, detail="原卡组不存在")
+    return new_deck
