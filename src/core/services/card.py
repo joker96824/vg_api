@@ -39,8 +39,11 @@ class CardService:
             conditions.append(or_(*keyword_conditions))
 
         # 精确匹配条件
-        if params.nation:
-            conditions.append(Card.nation.ilike(f"%{params.nation}%"))
+        if params.nation is not None:
+            if params.nation == "":
+                conditions.append(Card.nation.is_(None))
+            else:
+                conditions.append(Card.nation.ilike(f"%{params.nation}%"))
         if params.clan:
             conditions.append(Card.clan.ilike(f"%{params.clan}%"))
         if params.grade is not None:
