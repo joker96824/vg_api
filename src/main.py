@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
@@ -19,11 +20,20 @@ app = FastAPI(
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=["*"],  # 允许所有来源
     allow_credentials=True,
-    allow_methods=settings.ALLOWED_METHODS,
-    allow_headers=settings.ALLOWED_HEADERS,
+    allow_methods=["*"],  # 允许所有方法
+    allow_headers=["*"],  # 允许所有头部
 )
+
+# 添加重定向路由
+@app.get("/cards")
+async def redirect_cards():
+    return RedirectResponse(url="/api/v1/cards")
+
+@app.get("/cards/{path:path}")
+async def redirect_cards_path(path: str):
+    return RedirectResponse(url=f"/api/v1/cards/{path}")
 
 # 注册路由
 app.include_router(api_router, prefix="/api/v1")
