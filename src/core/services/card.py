@@ -78,7 +78,10 @@ class CardService:
         logger.debug(f"查询条件: {conditions}")
 
         # 构建查询语句
-        query: Select = select(Card).options(selectinload(Card.rarity_infos))
+        query: Select = select(Card).options(
+            selectinload(Card.rarity_infos),
+            selectinload(Card.ability_infos)
+        )
         if conditions:
             query = query.where(and_(*conditions))
 
@@ -105,7 +108,10 @@ class CardService:
         """
         logger.debug(f"查询卡牌ID: {card_id}")
 
-        query = select(Card).options(selectinload(Card.rarity_infos)).where(Card.id == card_id)
+        query = select(Card).options(
+            selectinload(Card.rarity_infos),
+            selectinload(Card.ability_infos)
+        ).where(Card.id == card_id)
         result = await self.session.execute(query)
         card = result.scalar_one_or_none()
 
@@ -119,7 +125,10 @@ class CardService:
         """
         logger.debug(f"查询卡牌ID列表: {card_ids}")
 
-        query = select(Card).options(selectinload(Card.rarity_infos)).where(Card.id.in_(card_ids))
+        query = select(Card).options(
+            selectinload(Card.rarity_infos),
+            selectinload(Card.ability_infos)
+        ).where(Card.id.in_(card_ids))
         result = await self.session.execute(query)
         cards = result.scalars().all()
 
@@ -133,7 +142,10 @@ class CardService:
         """
         logger.debug(f"查询卡牌编号: {card_code}")
 
-        query = select(Card).options(selectinload(Card.rarity_infos)).where(Card.card_code == card_code)
+        query = select(Card).options(
+            selectinload(Card.rarity_infos),
+            selectinload(Card.ability_infos)
+        ).where(Card.card_code == card_code)
         result = await self.session.execute(query)
         card = result.scalar_one_or_none()
 

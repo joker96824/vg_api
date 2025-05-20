@@ -52,7 +52,6 @@ class CardBase(BaseModel):
     ability: Optional[str] = Field(None, description="能力描述")
     card_alias: Optional[str] = Field(None, description="卡牌别称")
     card_group: Optional[str] = Field(None, description="所属集团")
-    ability_json: Optional[Dict[str, Any]] = Field(None, description="卡牌技能效果JSON数据，包含主动技能、自动技能和持续技能的效果信息")
     image_url: Optional[str] = Field(None, description="图片URL")
     card_thumbnail_url: Optional[str] = Field(None, description="缩略图URL")
     card_updated_at: Optional[datetime] = Field(None, description="更新时间")
@@ -80,9 +79,23 @@ class CardInDB(CardBase):
     class Config:
         from_attributes = True
 
+class CardAbilityResponse(BaseModel):
+    id: UUID
+    ability_desc: str
+    ability: Dict[str, Any] = Field(default_factory=dict)
+
+class CardRarityResponse(BaseModel):
+    id: UUID
+    pack_name: Optional[str] = None
+    card_number: Optional[str] = None
+    release_info: Optional[str] = None
+    quote: Optional[str] = None
+    illustrator: Optional[str] = None
+    image_url: Optional[str] = None
+
 class CardResponse(CardInDB):
     """卡牌响应模型"""
-    pass
+    ability_infos: List[CardAbilityResponse] = []
 
 class CardListResponse(BaseModel):
     """卡牌列表响应模型"""
