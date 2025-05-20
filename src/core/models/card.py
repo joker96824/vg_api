@@ -50,7 +50,6 @@ class Card(Base):
     ability: Mapped[Optional[str]] = mapped_column(Text, comment="能力描述")
     card_alias: Mapped[Optional[str]] = mapped_column(Text, comment="卡牌别称")
     card_group: Mapped[Optional[str]] = mapped_column(Text, comment="所属集团")
-    ability_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, comment="卡牌技能效果JSON数据")
     create_user_id: Mapped[str] = mapped_column(Text, nullable=False, server_default="current_user", comment="创建用户")
     update_user_id: Mapped[str] = mapped_column(Text, nullable=False, server_default="current_user", comment="更新用户")
     create_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True, comment="创建时间")
@@ -62,6 +61,7 @@ class Card(Base):
     # 关系
     rarity_infos: Mapped[List["CardRarity"]] = relationship("CardRarity", back_populates="card", cascade="all, delete-orphan")
     deck_cards: Mapped[List["DeckCard"]] = relationship("DeckCard", back_populates="card")
+    ability_infos: Mapped[List["CardAbility"]] = relationship("CardAbility", back_populates="card", cascade="all, delete-orphan")
 
 
 class CardRarity(Base):
@@ -85,4 +85,21 @@ class CardRarity(Base):
     # 唯一约束
     __table_args__ = (
         UniqueConstraint("pack_name", "card_number", name="uix_card_rarity_pack_number"),
-    ) 
+    )
+
+
+class CardAbility(Base):
+    """卡牌能力信息表"""
+    __tablename__ = "cardability"
+
+    id: Mapped[UUID] = mapped_column(PGUUID, primary_key=True, default=uuid4)
+    card_id: Mapped[UUID] = mapped_column(PGUUID, ForeignKey("card.id", ondelete="CASCADE"), nullable=False)
+    ability_desc: Mapped[Optional[str]] = mapped_column(Text, nullable=False, comment="能力描述")
+    ability: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, default={}, comment="能力JSON数据")
+    create_user_id: Mapped[str] = mapped_column(Text, nullable=False, server_default="current_user", comment="创建用户")
+    update_user_id: Mapped[str] = mapped_column(Text, nullable=False, server_default="current_user", comment="更新用户")
+    create_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+    # 关系
+    card: Mapped["Card"] = relationship("Card", back_populates="ability_infos") 

@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List
+from typing import Dict, List, Any
 
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,7 +40,7 @@ async def import_cards_from_json(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/import/batch", response_model=Dict[str, int])
+@router.post("/import/batch", response_model=Dict[str, Any])
 async def import_cards_batch(
     cards_data: List[Dict],
     session: AsyncSession = Depends(get_session)

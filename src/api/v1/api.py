@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from .endpoints import cards, decks
+from . import card_import
 
 api_router = APIRouter()
 
@@ -8,3 +9,6 @@ api_router.include_router(cards.router, tags=["cards"])
 
 # 注册卡组相关路由
 api_router.include_router(decks.router, tags=["decks"])
+
+# 注册卡牌导入相关路由
+api_router.include_router(card_import.router, prefix="/card_import", tags=["card_import"])
