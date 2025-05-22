@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from config.settings import settings
 from .api.v1.api import api_router
 from .core.logging import root_logger  # 导入日志配置
@@ -24,6 +25,16 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],  # 允许所有方法
     allow_headers=["*"],  # 允许所有头部
+)
+
+# 添加会话中间件
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SESSION_SECRET_KEY,  # 使用环境变量中的密钥
+    session_cookie="session",
+    max_age=1800,  # 30分钟过期
+    same_site="lax",
+    https_only=False  # 开发环境可以设置为False
 )
 
 # 添加重定向路由

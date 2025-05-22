@@ -5,9 +5,9 @@ from pydantic import AnyHttpUrl, validator
 
 class Settings(BaseSettings):
     # 应用设置
-    APP_NAME: str = "VG API"
+    APP_NAME: str = "Vanguard API"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
+    DEBUG: bool = False
     ENVIRONMENT: str = "development"
 
     # 服务器设置
@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 1800
 
     # Redis设置
-    REDIS_HOST: str
-    REDIS_PORT: int
-    REDIS_DB: int
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
     REDIS_PASSWORD: str = ""
 
     # JWT设置
@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     def REDIS_URL(self) -> str:
         auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
         return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
+    # 会话配置
+    SESSION_SECRET_KEY: str
 
     @validator("ALLOWED_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v):
