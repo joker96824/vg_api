@@ -19,29 +19,58 @@ class SMSService:
             decode_responses=True
         )
 
-    async def send_code(self, mobile: str, scene: str) -> Dict[str, Any]:
+    async def send_code(self, mobile: str, scene: str, ip: str) -> Dict[str, Any]:
         """发送验证码"""
-        logger.info(f"开始发送验证码: mobile={mobile}, scene={scene}")
+        logger.info(f"开始发送验证码: mobile={mobile}, scene={scene}, ip={ip}")
         
-        # 检查发送频率
-        if not self._check_rate_limit(mobile):
-            wait_time = self._get_wait_time(mobile)
-            logger.warning(f"发送频率限制: mobile={mobile}, wait_time={wait_time}")
-            return {"wait": wait_time}
+        # 检查手机号发送频率
+        mobile_count = self._get_mobile_count(mobile)
+        if mobile_count >= 5:  # 每日最多5次
+            wait_time = self._get_mobile_wait_time(mobile)
+            logger.warning(f"手机号发送频率限制: mobile={mobile}, count={mobile_count}, wait_time={wait_time}")
+            return {
+                "success": False,
+                "code": "MOBILE_LIMIT_EXCEEDED",
+                "message": f"该手机号今日发送次数已达上限（{mobile_count}/5次）",
+                "wait": wait_time,
+                "count": mobile_count,
+                "limit": 5
+            }
+
+        # 检查IP发送频率
+        ip_count = self._get_ip_count(ip)
+        if ip_count >= 20:  # 每日最多20次
+            wait_time = self._get_ip_wait_time(ip)
+            logger.warning(f"IP发送频率限制: ip={ip}, count={ip_count}, wait_time={wait_time}")
+            return {
+                "success": False,
+                "code": "IP_LIMIT_EXCEEDED",
+                "message": f"当前IP今日发送次数已达上限（{ip_count}/20次）",
+                "wait": wait_time,
+                "count": ip_count,
+                "limit": 20
+            }
 
         # 生成验证码
         code = self._generate_code()
         logger.info(f"生成验证码: mobile={mobile}, code={code}")
         
-        # 存储验证码
-        self._save_code(mobile, code, scene)
+        # 存储验证码并增加计数
+        self._save_code(mobile, code, scene, ip)
         
         # TODO: 调用短信服务发送验证码
         # 这里需要集成实际的短信服务，如阿里云、腾讯云等
         
-        return {"wait": 60}
+        return {
+            "success": True,
+            "code": "SMS_SENT_SUCCESS",
+            "message": "验证码发送成功",
+            "wait": 60,
+            "count": mobile_count + 1,
+            "limit": 5
+        }
 
-    async def verify_code(self, mobile: str, code: str, scene: str) -> bool:
+    async def verify_code(self, mobile: str, code: str, scene: str) -> Dict[str, Any]:
         """验证验证码"""
         key = f"SMS:CODE:{mobile}:{scene}"
         logger.info(f"开始验证验证码: mobile={mobile}, scene={scene}")
@@ -52,40 +81,70 @@ class SMSService:
             
             if not stored_code:
                 logger.warning(f"验证码不存在: key={key}")
-                return False
+                return {
+                    "success": False,
+                    "code": "CODE_NOT_FOUND",
+                    "message": "验证码不存在或已过期"
+                }
                 
             if stored_code != code:
                 logger.warning(f"验证码不匹配: input={code}, stored={stored_code}")
-                return False
+                return {
+                    "success": False,
+                    "code": "CODE_MISMATCH",
+                    "message": "验证码错误"
+                }
                 
             # 验证成功后删除验证码
             self.redis.delete(key)
             logger.info(f"验证码验证成功: mobile={mobile}")
-            return True
+            return {
+                "success": True,
+                "code": "VERIFY_SUCCESS",
+                "message": "验证码验证成功"
+            }
             
         except Exception as e:
             logger.error(f"验证码验证异常: {str(e)}")
-            return False
+            return {
+                "success": False,
+                "code": "VERIFY_ERROR",
+                "message": "验证码验证过程发生错误"
+            }
 
-    def _check_rate_limit(self, mobile: str) -> bool:
-        """检查发送频率限制"""
-        key = f"SMS:LIMIT:{mobile}"
+    def _get_mobile_count(self, mobile: str) -> int:
+        """获取手机号今日发送次数"""
+        key = f"SMS:MOBILE_COUNT:{mobile}"
         count = self.redis.get(key)
-        
-        if count and int(count) >= 5:  # 每日最多5次
-            return False
-            
-        # 增加计数
         if not count:
-            self.redis.setex(key, 86400, 1)  # 24小时过期
-        else:
-            self.redis.incr(key)
-            
-        return True
+            # 设置过期时间为今天结束
+            today_end = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
+            ttl = int((today_end - datetime.now()).total_seconds())
+            self.redis.setex(key, ttl, 0)
+            return 0
+        return int(count)
 
-    def _get_wait_time(self, mobile: str) -> int:
-        """获取等待时间"""
-        key = f"SMS:LIMIT:{mobile}"
+    def _get_ip_count(self, ip: str) -> int:
+        """获取IP今日发送次数"""
+        key = f"SMS:IP_COUNT:{ip}"
+        count = self.redis.get(key)
+        if not count:
+            # 设置过期时间为今天结束
+            today_end = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
+            ttl = int((today_end - datetime.now()).total_seconds())
+            self.redis.setex(key, ttl, 0)
+            return 0
+        return int(count)
+
+    def _get_mobile_wait_time(self, mobile: str) -> int:
+        """获取手机号等待时间"""
+        key = f"SMS:MOBILE_COUNT:{mobile}"
+        ttl = self.redis.ttl(key)
+        return max(ttl, 60)
+
+    def _get_ip_wait_time(self, ip: str) -> int:
+        """获取IP等待时间"""
+        key = f"SMS:IP_COUNT:{ip}"
         ttl = self.redis.ttl(key)
         return max(ttl, 60)
 
@@ -93,12 +152,27 @@ class SMSService:
         """生成6位数字验证码"""
         return str(random.randint(100000, 999999))
 
-    def _save_code(self, mobile: str, code: str, scene: str) -> None:
-        """保存验证码到Redis"""
+    def _save_code(self, mobile: str, code: str, scene: str, ip: str) -> None:
+        """保存验证码到Redis并增加计数"""
+        # 保存验证码
         key = f"SMS:CODE:{mobile}:{scene}"
-        try:
-            self.redis.setex(key, 300, code)  # 5分钟过期
-            logger.info(f"验证码保存成功: key={key}")
-        except Exception as e:
-            logger.error(f"验证码保存失败: {str(e)}")
-            raise 
+        self.redis.setex(key, 300, code)  # 5分钟过期
+        
+        # 增加手机号计数
+        mobile_key = f"SMS:MOBILE_COUNT:{mobile}"
+        today_end = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
+        ttl = int((today_end - datetime.now()).total_seconds())
+        
+        if not self.redis.exists(mobile_key):
+            self.redis.setex(mobile_key, ttl, 1)
+        else:
+            self.redis.incr(mobile_key)
+            self.redis.expire(mobile_key, ttl)  # 重新设置过期时间
+            
+        # 增加IP计数
+        ip_key = f"SMS:IP_COUNT:{ip}"
+        if not self.redis.exists(ip_key):
+            self.redis.setex(ip_key, ttl, 1)
+        else:
+            self.redis.incr(ip_key)
+            self.redis.expire(ip_key, ttl)  # 重新设置过期时间 
