@@ -14,62 +14,50 @@ security = HTTPBearer()
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_session)
-) -> Dict:
-    """
-    获取当前用户信息
-    """
+) -> dict:
+    """获取当前用户信息"""
     try:
-        # 验证token
         token = credentials.credentials
         payload = jwt.decode(
             token,
             os.getenv('JWT_SECRET_KEY', 'your-secret-key'),
             algorithms=[os.getenv('JWT_ALGORITHM', 'HS256')]
         )
-        
-        # 检查token是否过期
-        exp = payload.get('exp')
-        if not exp or datetime.utcnow().timestamp() > exp:
+        user_id = payload.get("sub")
+        if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token已过期"
+                detail="无效的认证信息"
             )
-            
-        # 获取用户信息
-        user_id = payload.get('sub')
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="无效的Token"
-            )
-            
-        # 查询用户
-        stmt = select(User).where(
-            User.id == user_id,
-            User.is_deleted == False
-        )
-        result = await db.execute(stmt)
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="用户不存在"
-            )
-            
-        return {
-            "id": str(user.id),
-            "mobile": user.mobile,
-            "nickname": user.nickname
-        }
-        
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效的Token"
+            detail="无效的认证信息"
         )
-    except Exception as e:
+
+    # 查询用户信息
+    stmt = select(User).where(User.id == user_id, User.is_deleted == False)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        ) 
+            detail="用户不存在或已被删除"
+        )
+
+    return {
+        "id": str(user.id),
+        "mobile": user.mobile,
+        "nickname": user.nickname,
+        "level": user.level
+    }
+
+def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """验证管理员权限"""
+    if current_user.get("level", 1) < 2:  # 假设level >= 2为管理员
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理员权限"
+        )
+    return current_user 

@@ -7,7 +7,7 @@ from src.core.services.captcha import CaptchaService
 from src.core.services.sms import SMSService
 from src.core.database import get_session
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.auth import get_current_user
+from src.core.auth import get_current_user, require_admin
 
 router = APIRouter()
 
@@ -27,6 +27,23 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=32)
 
 class LogoutRequest(BaseModel):
+    token: str
+
+class ResetPasswordRequest(BaseModel):
+    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
+    old_password: str = Field(min_length=8, max_length=32)
+    new_password: str = Field(min_length=8, max_length=32)
+
+class ClearLoginErrorsRequest(BaseModel):
+    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
+
+class ForceResetPasswordRequest(BaseModel):
+    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
+
+class CheckSessionRequest(BaseModel):
+    token: str
+
+class RefreshTokenRequest(BaseModel):
     token: str
 
 @router.get("/captcha")
@@ -132,13 +149,27 @@ async def login(
             device_fingerprint=request.headers.get("User-Agent", "")
         )
         
-        return JSONResponse(content={
-            "success": True,
-            "user": result.get("user"),
-            "token": result.get("token")
-        })
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "LOGIN_SUCCESS",
+                "message": "登录成功",
+                "data": {
+                    "user": result.get("user"),
+                    "token": result.get("token")
+                }
+            }
+        )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "LOGIN_ERROR",
+                "message": str(e)
+            }
+        )
 
 @router.post("/logout")
 async def logout(
@@ -160,4 +191,169 @@ async def logout(
             "message": "登出成功"
         })
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) 
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/reset-password")
+async def reset_password(
+    request: Request,
+    data: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_session)
+):
+    """修改密码"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.reset_password(
+            mobile=data.mobile,
+            old_password=data.old_password,
+            new_password=data.new_password,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "PASSWORD_RESET_SUCCESS",
+                "message": "密码修改成功"
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "PASSWORD_RESET_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/clear-login-errors")
+async def clear_login_errors(
+    request: Request,
+    data: ClearLoginErrorsRequest,
+    db: AsyncSession = Depends(get_session)
+):
+    """清除登录错误计数"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.clear_login_errors(data.mobile)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "CLEAR_ERRORS_SUCCESS",
+                "message": "已清除登录错误计数"
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "CLEAR_ERRORS_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/force-reset-password")
+async def force_reset_password(
+    request: Request,
+    data: ForceResetPasswordRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(require_admin)
+):
+    """强制重置密码为默认密码"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.force_reset_password(
+            mobile=data.mobile,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "PASSWORD_RESET_SUCCESS",
+                "message": "密码已重置为默认密码"
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "PASSWORD_RESET_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/check-session")
+async def check_session(
+    request: Request,
+    data: CheckSessionRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """检查会话状态"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.check_session(
+            user_id=current_user["id"],
+            token=data.token
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "SESSION_CHECK_SUCCESS",
+                "data": result
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "SESSION_CHECK_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/refresh-token")
+async def refresh_token(
+    request: Request,
+    data: RefreshTokenRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """刷新令牌"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.refresh_token(
+            user_id=current_user["id"],
+            old_token=data.token,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "TOKEN_REFRESH_SUCCESS",
+                "data": result
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "TOKEN_REFRESH_ERROR",
+                "message": str(e)
+            }
+        ) 
