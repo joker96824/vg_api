@@ -13,6 +13,8 @@ import bcrypt
 import logging
 import redis
 from config.settings import settings
+from src.core.services.captcha import CaptchaService
+from fastapi import Request
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ class AuthService:
         self,
         mobile: str,
         sms_code: str,
-        password: str,
+        password: str = "SealJump",  # 设置默认密码
         nickname: Optional[str] = None,
         ip: str = "",
         device_fingerprint: str = ""
@@ -54,8 +56,7 @@ class AuthService:
             mobile=mobile,
             mobile_hash=self._hash_mobile(mobile),
             password_hash=self._hash_password(password),
-            nickname=nickname or f"用户{mobile[-4:]}",
-            level=1  # 默认普通用户级别
+            nickname=nickname or f"用户{mobile[-6:]}"  # 使用手机号后6位
         )
         self.session.add(user)
         await self.session.flush()
@@ -120,12 +121,30 @@ class AuthService:
 
     async def login(
         self,
+        request: Request,
         mobile: str,
         password: str,
+        captcha: Optional[str] = None,
         ip: str = "",
         device_fingerprint: str = ""
     ) -> Dict[str, Any]:
         """用户登录"""
+        # 检查是否需要图形验证码
+        captcha_key = f"LOGIN_CAPTCHA:{mobile}"
+        captcha_required = self.redis.exists(captcha_key)
+        
+        # 如果需要图形验证码但未提供
+        if captcha_required and not captcha:
+            raise ValueError("需要图形验证码")
+            
+        # 如果提供了图形验证码，验证它
+        if captcha:
+            captcha_service = CaptchaService()
+            if not await captcha_service.verify(request, captcha):
+                raise ValueError("图形验证码错误")
+            # 验证成功后删除验证码
+            self.redis.delete(captcha_key)
+
         # 检查账号是否被锁定
         if self._is_account_locked(mobile):
             error_count = self._get_password_error_count(mobile)
@@ -156,6 +175,9 @@ class AuthService:
             error_count = self._increment_password_error(mobile)
             remaining_attempts = 5 - error_count
             
+            # 如果密码错误，设置需要图形验证码
+            self.redis.setex(captcha_key, 300, "1")  # 5分钟内需要图形验证码
+            
             # 记录失败的登录日志
             login_log = LoginLog(
                 user_id=user.id,
@@ -173,8 +195,9 @@ class AuthService:
             else:
                 raise ValueError(f"密码错误，剩余尝试次数：{remaining_attempts}")
 
-        # 密码正确，清除错误计数
+        # 密码正确，清除错误计数和图形验证码要求
         self.redis.delete(f"PASSWORD_ERROR:{mobile}")
+        self.redis.delete(captcha_key)
 
         # 生成JWT令牌
         token = self._generate_token(user.id, user.level)
@@ -452,4 +475,103 @@ class AuthService:
         return {
             "token": new_token,
             "expires_at": (datetime.utcnow() + timedelta(hours=4)).isoformat()
+        }
+
+    async def update_nickname(
+        self,
+        user_id: str,
+        new_nickname: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """修改用户昵称"""
+        # 查找用户
+        stmt = select(User).where(User.id == user_id, User.is_deleted == False)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ValueError("用户不存在或已被删除")
+            
+        # 更新昵称
+        user.nickname = new_nickname
+        
+        # 记录修改日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=7,  # 修改昵称
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"昵称修改为：{new_nickname}"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "昵称修改成功",
+            "data": {
+                "nickname": new_nickname
+            }
+        }
+
+    async def update_mobile(
+        self,
+        request: Request,
+        user_id: str,
+        new_mobile: str,
+        sms_code: str,
+        captcha: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """修改手机号"""
+        # 验证图形验证码
+        captcha_service = CaptchaService()
+        if not await captcha_service.verify(request, captcha):
+            raise ValueError("图形验证码错误")
+            
+        # 验证短信验证码
+        verify_result = await self.sms_service.verify_code(new_mobile, sms_code, "change_mobile")
+        if not verify_result["success"]:
+            raise ValueError(verify_result["message"])
+            
+        # 检查新手机号是否已被使用
+        stmt = select(User).where(User.mobile_hash == self._hash_mobile(new_mobile))
+        result = await self.session.execute(stmt)
+        if result.scalar_one_or_none():
+            raise ValueError("该手机号已被使用")
+            
+        # 查找用户
+        stmt = select(User).where(User.id == user_id, User.is_deleted == False)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ValueError("用户不存在或已被删除")
+            
+        # 更新手机号
+        old_mobile = user.mobile
+        user.mobile = new_mobile
+        user.mobile_hash = self._hash_mobile(new_mobile)
+        
+        # 记录修改日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=8,  # 修改手机号
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"手机号从 {old_mobile} 修改为 {new_mobile}"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "手机号修改成功",
+            "data": {
+                "mobile": new_mobile
+            }
         } 

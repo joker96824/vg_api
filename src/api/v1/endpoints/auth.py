@@ -19,12 +19,11 @@ class SendSMSRequest(BaseModel):
 class RegisterRequest(BaseModel):
     mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
     sms_code: str = Field(pattern=r'^\d{6}$')
-    password: str = Field(min_length=8, max_length=32)
-    nickname: Optional[str] = None
 
 class LoginRequest(BaseModel):
     mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
     password: str = Field(min_length=8, max_length=32)
+    captcha: Optional[str] = None  # 图形验证码，选填
 
 class LogoutRequest(BaseModel):
     token: str
@@ -46,10 +45,19 @@ class CheckSessionRequest(BaseModel):
 class RefreshTokenRequest(BaseModel):
     token: str
 
+class UpdateNicknameRequest(BaseModel):
+    nickname: str = Field(min_length=2, max_length=32)
+
+class UpdateMobileRequest(BaseModel):
+    new_mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
+    sms_code: str = Field(pattern=r'^\d{6}$')
+    captcha: str
+
 @router.get("/captcha")
 async def get_captcha(request: Request):
     """获取图形验证码"""
     captcha_service = CaptchaService()
+    print(request.session)
     image = await captcha_service.generate(request)
     return Response(content=image.getvalue(), media_type="image/png")
 
@@ -61,6 +69,7 @@ async def send_sms(
 ):
     """发送短信验证码"""
     # 验证图形验证码
+    print(request.session)
     captcha_service = CaptchaService()
     if not await captcha_service.verify(request, data.captcha):
         return JSONResponse(
@@ -102,11 +111,15 @@ async def register(
     """用户注册"""
     auth_service = AuthService(db)
     try:
+        # 设置默认密码和昵称
+        default_password = "SealJump"
+        default_nickname = f"用户{data.mobile[-6:]}"
+        
         result = await auth_service.register(
             mobile=data.mobile,
             sms_code=data.sms_code,
-            password=data.password,
-            nickname=data.nickname,
+            password=default_password,
+            nickname=default_nickname,
             ip=request.client.host,
             device_fingerprint=request.headers.get("User-Agent", "")
         )
@@ -143,8 +156,10 @@ async def login(
     auth_service = AuthService(db)
     try:
         result = await auth_service.login(
+            request=request,
             mobile=data.mobile,
             password=data.password,
+            captcha=data.captcha,
             ip=request.client.host,
             device_fingerprint=request.headers.get("User-Agent", "")
         )
@@ -197,11 +212,23 @@ async def logout(
 async def reset_password(
     request: Request,
     data: ResetPasswordRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)  # 添加JWT验证
 ):
     """修改密码"""
     auth_service = AuthService(db)
     try:
+        # 验证当前用户是否是手机号对应的用户
+        if current_user["mobile"] != data.mobile:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "success": False,
+                    "code": "PERMISSION_DENIED",
+                    "message": "无权修改其他用户的密码"
+                }
+            )
+            
         result = await auth_service.reset_password(
             mobile=data.mobile,
             old_password=data.old_password,
@@ -354,6 +381,81 @@ async def refresh_token(
             content={
                 "success": False,
                 "code": "TOKEN_REFRESH_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/update-nickname")
+async def update_nickname(
+    request: Request,
+    data: UpdateNicknameRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)  # 从JWT令牌中获取当前用户信息
+):
+    """修改用户昵称"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.update_nickname(
+            user_id=current_user["id"],
+            new_nickname=data.nickname,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")  # 获取设备信息
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "NICKNAME_UPDATE_SUCCESS",
+                "message": "昵称修改成功",
+                "data": result["data"]
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "NICKNAME_UPDATE_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/update-mobile")
+async def update_mobile(
+    request: Request,
+    data: UpdateMobileRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)  # 从JWT令牌中获取当前用户信息
+):
+    """修改手机号"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.update_mobile(
+            request=request,
+            user_id=current_user["id"],
+            new_mobile=data.new_mobile,
+            sms_code=data.sms_code,
+            captcha=data.captcha,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")  # 获取设备信息
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "MOBILE_UPDATE_SUCCESS",
+                "message": "手机号修改成功",
+                "data": result["data"]
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "MOBILE_UPDATE_ERROR",
                 "message": str(e)
             }
         ) 

@@ -50,7 +50,7 @@ class CaptchaService:
             
         self.redis.setex(
             f"CAPTCHA:{session_id}",
-            180,  # 3分钟过期
+            300,  # 5分钟过期
             code
         )
         
