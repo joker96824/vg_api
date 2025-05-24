@@ -242,12 +242,18 @@ class AuthService:
         """验证密码"""
         return bcrypt.checkpw(password.encode(), password_hash.encode())
 
-    def _generate_token(self, user_id: str, level: int) -> str:
-        """生成JWT令牌"""
+    def _generate_token(self, user_id: str, level: int, expires_hours: int = 4) -> str:
+        """生成JWT令牌
+        
+        Args:
+            user_id: 用户ID
+            level: 用户级别
+            expires_hours: token有效期（小时），默认4小时
+        """
         payload = {
             "sub": str(user_id),
             "level": level,  # 添加用户级别信息
-            "exp": datetime.utcnow() + timedelta(hours=4),
+            "exp": datetime.utcnow() + timedelta(hours=expires_hours),
             "iat": datetime.utcnow()
         }
         return jwt.encode(
@@ -454,8 +460,8 @@ class AuthService:
         if old_session:
             old_session.is_deleted = True
             
-        # 生成新令牌
-        new_token = self._generate_token(user.id, user.level)
+        # 生成新令牌，有效期为40分钟
+        new_token = self._generate_token(user.id, user.level, expires_hours=40/60)
         
         # 创建新会话
         await self._create_session(user.id, new_token, ip, device_fingerprint)
@@ -474,7 +480,7 @@ class AuthService:
         await self.session.commit()
         return {
             "token": new_token,
-            "expires_at": (datetime.utcnow() + timedelta(hours=4)).isoformat()
+            "expires_at": (datetime.utcnow() + timedelta(hours=40/60)).isoformat()
         }
 
     async def update_nickname(
