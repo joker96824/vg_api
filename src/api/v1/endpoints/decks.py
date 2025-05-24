@@ -1,6 +1,6 @@
 from typing import List
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
@@ -91,17 +91,44 @@ async def delete_deck(
 
 @router.patch("/decks/{deck_id}/info", response_model=DeckResponse, summary="更新卡组名称和描述")
 async def update_deck_info(
+    request: Request,
     deck_id: UUID,
-    deck_name: str = Query(..., description="新的卡组名称"),
-    deck_description: str = Query(..., description="新的卡组描述"),
+    deck_name: str = Body(None, description="新的卡组名称"),
+    deck_description: str = Body(None, description="新的卡组描述"),
     session: AsyncSession = Depends(get_session)
 ):
     """更新卡组的名称和描述"""
-    deck_service = DeckService(session)
-    updated_deck = await deck_service.update_deck_info(deck_id, deck_name, deck_description)
-    if not updated_deck:
-        raise HTTPException(status_code=404, detail="卡组不存在")
-    return updated_deck
+    # 记录请求参数
+    logger.info("="*50)
+    logger.info("更新卡组信息 - 请求参数:")
+    logger.info(f"deck_id: {deck_id}")
+    logger.info("请求体原始内容:")
+    request_body = await request.json()
+    logger.info(f"request body: {request_body}")
+    logger.info("="*50)
+    
+    try:
+        deck_service = DeckService(session)
+        updated_deck = await deck_service.update_deck_info(deck_id, deck_name, deck_description)
+        
+        if not updated_deck:
+            logger.warning(f"卡组不存在 - deck_id: {deck_id}")
+            raise HTTPException(status_code=404, detail="卡组不存在")
+            
+        # 记录更新结果
+        logger.info("更新结果:")
+        logger.info(f"更新后的卡组名称: {updated_deck.deck_name}")
+        logger.info(f"更新后的卡组描述: {updated_deck.deck_description}")
+        logger.info("="*50)
+        
+        return updated_deck
+        
+    except Exception as e:
+        logger.error(f"更新卡组信息时发生错误 - deck_id: {deck_id}, error: {str(e)}")
+        logger.error(f"错误类型: {type(e)}")
+        logger.error(f"错误详情: {str(e)}")
+        logger.error("="*50)
+        raise HTTPException(status_code=500, detail=f"更新卡组信息失败: {str(e)}")
 
 
 @router.patch("/decks/{deck_id}/preset", response_model=DeckResponse, summary="更新卡组预设值")

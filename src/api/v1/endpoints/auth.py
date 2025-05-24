@@ -8,8 +8,11 @@ from src.core.services.sms import SMSService
 from src.core.database import get_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.auth import get_current_user, require_admin
+import logging
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 class SendSMSRequest(BaseModel):
     mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
@@ -52,6 +55,9 @@ class UpdateMobileRequest(BaseModel):
     new_mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
     sms_code: str = Field(pattern=r'^\d{6}$')
     captcha: str
+
+class UpdateAvatarRequest(BaseModel):
+    avatar_url: str = Field(..., description="头像URL地址")
 
 @router.get("/captcha")
 async def get_captcha(request: Request):
@@ -153,6 +159,15 @@ async def login(
     db: AsyncSession = Depends(get_session)
 ):
     """用户登录"""
+    logger.info("="*50)
+    logger.info("登录请求 - 参数:")
+    logger.info(f"mobile: {data.mobile}")
+    logger.info(f"password: {'*' * len(data.password)}")
+    logger.info(f"captcha: {data.captcha}")
+    logger.info("请求体原始内容:")
+    request_body = await request.json()
+    logger.info(f"request body: {request_body}")
+    
     auth_service = AuthService(db)
     try:
         result = await auth_service.login(
@@ -163,6 +178,11 @@ async def login(
             ip=request.client.host,
             device_fingerprint=request.headers.get("User-Agent", "")
         )
+        
+        logger.info("登录成功:")
+        logger.info(f"user_id: {result.get('user', {}).get('id')}")
+        logger.info(f"token: {result.get('token')[:20]}...")
+        logger.info("="*50)
         
         return JSONResponse(
             status_code=200,
@@ -177,6 +197,8 @@ async def login(
             }
         )
     except ValueError as e:
+        logger.error(f"登录失败: {str(e)}")
+        logger.error("="*50)
         return JSONResponse(
             status_code=400,
             content={
@@ -189,24 +211,53 @@ async def login(
 @router.post("/logout")
 async def logout(
     request: Request,
-    data: LogoutRequest,
-    db: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(get_current_user)
+    db: AsyncSession = Depends(get_session)
 ):
     """用户登出"""
+    logger.info("="*50)
+    logger.info("登出请求")
+    
+    # 从请求头获取 token
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        logger.error("未提供有效的认证token")
+        logger.error("="*50)
+        return JSONResponse(
+            status_code=401,
+            content={
+                "success": False,
+                "code": "INVALID_TOKEN",
+                "message": "未提供有效的认证token"
+            }
+        )
+    
+    token = auth_header.split(" ")[1]
+    logger.info(f"token: {token[:20]}...")
+    
     auth_service = AuthService(db)
     try:
-        await auth_service.logout(
-            user_id=current_user["id"],
-            token=data.token
+        await auth_service.logout(token)
+        logger.info("登出成功")
+        logger.info("="*50)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "LOGOUT_SUCCESS",
+                "message": "登出成功"
+            }
         )
-        
-        return JSONResponse(content={
-            "success": True,
-            "message": "登出成功"
-        })
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"登出失败: {str(e)}")
+        logger.error("="*50)
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "LOGOUT_ERROR",
+                "message": str(e)
+            }
+        )
 
 @router.post("/reset-password")
 async def reset_password(
@@ -456,6 +507,42 @@ async def update_mobile(
             content={
                 "success": False,
                 "code": "MOBILE_UPDATE_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/update-avatar")
+async def update_avatar(
+    request: Request,
+    data: UpdateAvatarRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)  # 从JWT令牌中获取当前用户信息
+):
+    """修改用户头像"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.update_avatar(
+            user_id=current_user["id"],
+            avatar_url=data.avatar_url,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")  # 获取设备信息
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "AVATAR_UPDATE_SUCCESS",
+                "message": "头像修改成功",
+                "data": result["data"]
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "AVATAR_UPDATE_ERROR",
                 "message": str(e)
             }
         ) 
