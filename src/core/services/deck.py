@@ -130,19 +130,55 @@ class DeckService:
         await self.db.commit()
         return True
 
-    async def update_deck_info(self, deck_id: UUID, deck_name: str, deck_description: str) -> Optional[Deck]:
+    async def update_deck_info(self, deck_id: UUID, deck_name: Optional[str] = None, deck_description: Optional[str] = None) -> Optional[Deck]:
         """更新卡组名称和描述"""
-        db_deck = await self.get_deck(deck_id)
-        if not db_deck:
-            return None
-            
-        db_deck.deck_name = deck_name
-        db_deck.deck_description = deck_description
-        db_deck.update_time = datetime.now()
+        logger.info("="*50)
+        logger.info("DeckService.update_deck_info - 开始处理:")
+        logger.info(f"deck_id: {deck_id}")
+        logger.info(f"deck_name: {deck_name}")
+        logger.info(f"deck_description: {deck_description}")
+        logger.info(f"deck_name type: {type(deck_name)}")
+        logger.info(f"deck_description type: {type(deck_description)}")
         
-        await self.db.commit()
-        await self.db.refresh(db_deck)
-        return db_deck
+        try:
+            db_deck = await self.get_deck(deck_id)
+            if not db_deck:
+                logger.warning(f"卡组不存在 - deck_id: {deck_id}")
+                return None
+                
+            logger.info("找到卡组，当前信息:")
+            logger.info(f"当前名称: {db_deck.deck_name}")
+            logger.info(f"当前描述: {db_deck.deck_description}")
+            
+            # 记录更新前的值
+            old_name = db_deck.deck_name
+            old_description = db_deck.deck_description
+            
+            if deck_name is not None:
+                db_deck.deck_name = deck_name
+                logger.info(f"更新名称: {old_name} -> {deck_name}")
+            if deck_description is not None:
+                db_deck.deck_description = deck_description
+                logger.info(f"更新描述: {old_description} -> {deck_description}")
+                
+            db_deck.update_time = datetime.now()
+            
+            await self.db.commit()
+            await self.db.refresh(db_deck)
+            
+            logger.info("更新后的卡组信息:")
+            logger.info(f"新名称: {db_deck.deck_name}")
+            logger.info(f"新描述: {db_deck.deck_description}")
+            logger.info("="*50)
+            
+            return db_deck
+            
+        except Exception as e:
+            logger.error(f"更新卡组信息时发生错误 - deck_id: {deck_id}")
+            logger.error(f"错误类型: {type(e)}")
+            logger.error(f"错误详情: {str(e)}")
+            logger.error("="*50)
+            raise
 
     async def update_deck_preset(self, deck_id: UUID, preset: int) -> Optional[Deck]:
         """更新卡组预设值"""

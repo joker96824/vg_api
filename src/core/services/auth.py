@@ -280,12 +280,11 @@ class AuthService:
         )
         self.session.add(session)
 
-    async def logout(self, user_id: str, token: str) -> None:
-        """用户登出"""
-        # 查找并删除会话记录
+    async def _delete_session(self, token: str) -> None:
+        """删除会话记录"""
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
         stmt = select(Session).where(
-            Session.user_id == user_id,
-            Session.token_hash == hashlib.sha256(token.encode()).hexdigest(),
+            Session.token_hash == token_hash,
             Session.is_deleted == False
         )
         result = await self.session.execute(stmt)
@@ -294,17 +293,28 @@ class AuthService:
         if session:
             session.is_deleted = True
             await self.session.commit()
+            logger.info(f"已删除会话记录，token_hash: {token_hash[:10]}...")
+
+    async def logout(self, token: str) -> None:
+        """用户登出"""
+        try:
+            # 验证token
+            payload = jwt.decode(
+                token,
+                os.getenv('JWT_SECRET_KEY', 'your-secret-key'),
+                algorithms=[os.getenv('JWT_ALGORITHM', 'HS256')]
+            )
+            user_id = payload.get("sub")
+            if not user_id:
+                raise ValueError("无效的token")
             
-        # 记录登出日志
-        login_log = LoginLog(
-            user_id=user_id,
-            login_type=3,  # 登出
-            ip="",  # 登出时可能没有IP信息
-            device_info={},
-            status=1  # 成功
-        )
-        self.session.add(login_log)
-        await self.session.commit()
+            # 删除会话
+            await self._delete_session(token)
+            
+        except jwt.ExpiredSignatureError:
+            raise ValueError("token已过期")
+        except jwt.JWTError:
+            raise ValueError("无效的token")
 
     def _clear_password_error(self, mobile: str) -> None:
         """清除密码错误计数"""
@@ -579,5 +589,44 @@ class AuthService:
             "message": "手机号修改成功",
             "data": {
                 "mobile": new_mobile
+            }
+        }
+
+    async def update_avatar(
+        self,
+        user_id: str,
+        avatar_url: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """修改用户头像"""
+        # 查找用户
+        stmt = select(User).where(User.id == user_id, User.is_deleted == False)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ValueError("用户不存在或已被删除")
+            
+        # 更新头像
+        user.avatar = avatar_url
+        
+        # 记录修改日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=9,  # 修改头像
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"头像已更新"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "头像修改成功",
+            "data": {
+                "avatar": avatar_url
             }
         } 
