@@ -15,6 +15,7 @@ import redis
 from config.settings import settings
 from src.core.services.captcha import CaptchaService
 from fastapi import Request
+from src.core.services.email import EmailService
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class AuthService:
         await self.session.flush()
 
         # 生成JWT令牌
-        token = self._generate_token(user.id, user.level)
+        token = await self._generate_token(user.id, user.level)
 
         # 创建登录日志
         login_log = LoginLog(
@@ -88,9 +89,9 @@ class AuthService:
             "token": token
         }
 
-    def _get_password_error_count(self, mobile: str) -> int:
+    def _get_password_error_count(self, account: str) -> int:
         """获取密码错误次数"""
-        key = f"PASSWORD_ERROR:{mobile}"
+        key = f"PASSWORD_ERROR:{account}"
         count = self.redis.get(key)
         if not count:
             # 设置过期时间为今天结束
@@ -100,10 +101,10 @@ class AuthService:
             return 0
         return int(count)
 
-    def _increment_password_error(self, mobile: str) -> int:
+    def _increment_password_error(self, account: str) -> int:
         """增加密码错误次数"""
-        key = f"PASSWORD_ERROR:{mobile}"
-        count = self._get_password_error_count(mobile)
+        key = f"PASSWORD_ERROR:{account}"
+        count = self._get_password_error_count(account)
         today_end = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
         ttl = int((today_end - datetime.now()).total_seconds())
         
@@ -115,9 +116,9 @@ class AuthService:
             
         return count + 1
 
-    def _is_account_locked(self, mobile: str) -> bool:
+    def _is_account_locked(self, account: str) -> bool:
         """检查账号是否被锁定"""
-        return self._get_password_error_count(mobile) >= 5
+        return self._get_password_error_count(account) >= 5
 
     async def login(
         self,
@@ -200,7 +201,7 @@ class AuthService:
         self.redis.delete(captcha_key)
 
         # 生成JWT令牌
-        token = self._generate_token(user.id, user.level)
+        token = await self._generate_token(user.id, user.level)
 
         # 创建登录日志
         login_log = LoginLog(
@@ -242,7 +243,7 @@ class AuthService:
         """验证密码"""
         return bcrypt.checkpw(password.encode(), password_hash.encode())
 
-    def _generate_token(self, user_id: str, level: int, expires_hours: int = 4) -> str:
+    async def _generate_token(self, user_id: str, level: int, expires_hours: int = 4) -> str:
         """生成JWT令牌
         
         Args:
@@ -250,9 +251,20 @@ class AuthService:
             level: 用户级别
             expires_hours: token有效期（小时），默认4小时
         """
+        # 查找用户信息
+        stmt = select(User).where(User.id == user_id)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ValueError("用户不存在")
+            
         payload = {
             "sub": str(user_id),
-            "level": level,  # 添加用户级别信息
+            "level": level,
+            "mobile": user.mobile,
+            "email": user.email,
+            "nickname": user.nickname,
             "exp": datetime.utcnow() + timedelta(hours=expires_hours),
             "iat": datetime.utcnow()
         }
@@ -316,11 +328,11 @@ class AuthService:
         except jwt.JWTError:
             raise ValueError("无效的token")
 
-    def _clear_password_error(self, mobile: str) -> None:
+    def _clear_password_error(self, account: str) -> None:
         """清除密码错误计数"""
-        key = f"PASSWORD_ERROR:{mobile}"
+        key = f"PASSWORD_ERROR:{account}"
         self.redis.delete(key)
-        logger.info(f"已清除手机号 {mobile} 的密码错误计数")
+        logger.info(f"已清除 {account} 的密码错误计数")
 
     async def reset_password(
         self,
@@ -471,7 +483,7 @@ class AuthService:
             old_session.is_deleted = True
             
         # 生成新令牌，有效期为40分钟
-        new_token = self._generate_token(user.id, user.level, expires_hours=40/60)
+        new_token = await self._generate_token(user.id, user.level, expires_hours=40/60)
         
         # 创建新会话
         await self._create_session(user.id, new_token, ip, device_fingerprint)
@@ -628,5 +640,322 @@ class AuthService:
             "message": "头像修改成功",
             "data": {
                 "avatar": avatar_url
+            }
+        }
+
+    def _hash_email(self, email: str) -> str:
+        """邮箱哈希"""
+        return hashlib.sha256(email.encode()).hexdigest()
+
+    async def register_by_email(
+        self,
+        email: str,
+        email_code: str,
+        password: str = "SealJump",  # 设置默认密码
+        nickname: Optional[str] = None,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """邮箱注册"""
+        # 验证邮箱验证码
+        email_service = EmailService()
+        verify_result = await email_service.verify_code(email, email_code, "register")
+        if not verify_result["success"]:
+            raise ValueError(verify_result["message"])
+
+        # 检查邮箱是否已注册
+        stmt = select(User).where(User.email_hash == self._hash_email(email))
+        result = await self.session.execute(stmt)
+        if result.scalar_one_or_none():
+            raise ValueError("该邮箱已注册")
+
+        # 创建用户
+        user = User(
+            email=email,
+            email_hash=self._hash_email(email),
+            password_hash=self._hash_password(password),
+            nickname=nickname or f"用户{email.split('@')[0]}"  # 使用邮箱用户名部分
+        )
+        self.session.add(user)
+        await self.session.flush()
+
+        # 生成JWT令牌
+        token = await self._generate_token(user.id, user.level)
+
+        # 创建登录日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=1,  # 注册登录
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1  # 成功
+        )
+        self.session.add(login_log)
+
+        # 创建会话记录
+        await self._create_session(user.id, token, ip, device_fingerprint)
+
+        await self.session.commit()
+        return {
+            "user": {
+                "id": str(user.id),
+                "email": email,
+                "nickname": user.nickname,
+                "level": user.level
+            },
+            "token": token
+        }
+
+    async def login_by_email(
+        self,
+        request: Request,
+        email: str,
+        password: str,
+        captcha: Optional[str] = None,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """邮箱登录"""
+        # 检查是否需要图形验证码
+        captcha_key = f"LOGIN_CAPTCHA:{email}"
+        captcha_required = self.redis.exists(captcha_key)
+        
+        # 如果需要图形验证码但未提供
+        if captcha_required and not captcha:
+            raise ValueError("需要图形验证码")
+            
+        # 如果提供了图形验证码，验证它
+        if captcha:
+            captcha_service = CaptchaService()
+            if not await captcha_service.verify(request, captcha):
+                raise ValueError("图形验证码错误")
+            # 验证成功后删除验证码
+            self.redis.delete(captcha_key)
+
+        # 检查账号是否被锁定
+        if self._is_account_locked(email):
+            error_count = self._get_password_error_count(email)
+            wait_time = self.redis.ttl(f"PASSWORD_ERROR:{email}")
+            raise ValueError(f"账号已被锁定，今日剩余错误次数：{5-error_count}，请{wait_time}秒后重试")
+
+        # 查找用户
+        stmt = select(User).where(User.email_hash == self._hash_email(email))
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            # 记录失败的登录日志
+            login_log = LoginLog(
+                login_type=2,  # 密码登录
+                ip=ip,
+                device_info={"user_agent": device_fingerprint},
+                status=0,  # 失败
+                remark="用户不存在"
+            )
+            self.session.add(login_log)
+            await self.session.commit()
+            raise ValueError("用户不存在")
+
+        # 验证密码
+        if not self._verify_password(password, user.password_hash):
+            # 增加密码错误次数
+            error_count = self._increment_password_error(email)
+            remaining_attempts = 5 - error_count
+            
+            # 如果密码错误，设置需要图形验证码
+            self.redis.setex(captcha_key, 300, "1")  # 5分钟内需要图形验证码
+            
+            # 记录失败的登录日志
+            login_log = LoginLog(
+                user_id=user.id,
+                login_type=2,  # 密码登录
+                ip=ip,
+                device_info={"user_agent": device_fingerprint},
+                status=0,  # 失败
+                remark=f"密码错误，剩余尝试次数：{remaining_attempts}"
+            )
+            self.session.add(login_log)
+            await self.session.commit()
+            
+            if remaining_attempts <= 0:
+                raise ValueError("密码错误次数过多，账号已被锁定，请明天再试")
+            else:
+                raise ValueError(f"密码错误，剩余尝试次数：{remaining_attempts}")
+
+        # 密码正确，清除错误计数和图形验证码要求
+        self.redis.delete(f"PASSWORD_ERROR:{email}")
+        self.redis.delete(captcha_key)
+
+        # 生成JWT令牌
+        token = await self._generate_token(user.id, user.level)
+
+        # 创建登录日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=2,  # 密码登录
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1  # 成功
+        )
+        self.session.add(login_log)
+
+        # 创建会话记录
+        await self._create_session(user.id, token, ip, device_fingerprint)
+
+        # 更新用户最后登录时间
+        user.last_login_at = datetime.utcnow()
+        
+        await self.session.commit()
+        return {
+            "user": {
+                "id": str(user.id),
+                "email": user.email,
+                "nickname": user.nickname,
+                "level": user.level
+            },
+            "token": token
+        }
+
+    async def reset_password_by_email(
+        self,
+        email: str,
+        old_password: str,
+        new_password: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """通过邮箱修改密码"""
+        # 查找用户
+        stmt = select(User).where(User.email_hash == self._hash_email(email))
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ValueError("用户不存在")
+
+        # 验证旧密码
+        if not self._verify_password(old_password, user.password_hash):
+            raise ValueError("旧密码错误")
+
+        # 更新密码
+        user.password_hash = self._hash_password(new_password)
+        
+        # 清除密码错误计数
+        self._clear_password_error(email)
+        
+        # 记录密码修改日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=4,  # 密码修改
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark="密码修改成功"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "密码修改成功"
+        }
+
+    async def force_reset_password_by_email(
+        self,
+        email: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """强制重置邮箱用户的密码为默认密码"""
+        # 查找用户
+        stmt = select(User).where(User.email_hash == self._hash_email(email))
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ValueError("用户不存在")
+
+        # 更新密码为默认密码
+        default_password = "SealJump"
+        user.password_hash = self._hash_password(default_password)
+        
+        # 清除密码错误计数
+        self._clear_password_error(email)
+        
+        # 记录密码重置日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=5,  # 密码重置
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark="密码已重置为默认密码"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "密码已重置为默认密码"
+        }
+
+    async def update_email(
+        self,
+        request: Request,
+        user_id: str,
+        new_email: str,
+        email_code: str,
+        captcha: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """修改邮箱"""
+        # 验证图形验证码
+        captcha_service = CaptchaService()
+        if not await captcha_service.verify(request, captcha):
+            raise ValueError("图形验证码错误")
+            
+        # 验证邮箱验证码
+        email_service = EmailService()
+        verify_result = await email_service.verify_code(new_email, email_code, "change_email")
+        if not verify_result["success"]:
+            raise ValueError(verify_result["message"])
+            
+        # 检查新邮箱是否已被使用
+        stmt = select(User).where(User.email_hash == self._hash_email(new_email))
+        result = await self.session.execute(stmt)
+        if result.scalar_one_or_none():
+            raise ValueError("该邮箱已被使用")
+            
+        # 查找用户
+        stmt = select(User).where(User.id == user_id, User.is_deleted == False)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ValueError("用户不存在或已被删除")
+            
+        # 更新邮箱
+        old_email = user.email
+        user.email = new_email
+        user.email_hash = self._hash_email(new_email)
+        
+        # 记录修改日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=10,  # 修改邮箱
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"邮箱从 {old_email} 修改为 {new_email}"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "邮箱修改成功",
+            "data": {
+                "email": new_email
             }
         } 

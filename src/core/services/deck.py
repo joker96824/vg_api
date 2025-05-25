@@ -18,10 +18,10 @@ class DeckService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_deck(self, deck: DeckCreate) -> Deck:
+    async def create_deck(self, deck: DeckCreate, user_id: UUID) -> Deck:
         """创建卡组"""
         db_deck = Deck(
-            user_id=deck.user_id,
+            user_id=user_id,
             deck_name=deck.deck_name,
             deck_description=deck.deck_description,
             is_public=deck.is_public,
