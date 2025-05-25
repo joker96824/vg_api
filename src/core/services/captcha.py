@@ -63,12 +63,14 @@ class CaptchaService:
     async def verify(self, request: Request, code: str) -> bool:
         """验证图形验证码"""
         session_id = request.session.get('session_id')
+        print(f"session_id: {session_id}")
+        print(f"code: {code}")
         if not session_id:
             return False
             
         key = f"CAPTCHA:{session_id}"
         stored_code = self.redis.get(key)
-        
+        print(f"stored_code: {stored_code}")
         if not stored_code or stored_code.upper() != code.upper():
             return False
             

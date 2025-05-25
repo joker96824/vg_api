@@ -9,6 +9,7 @@ from src.core.database import get_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.auth import get_current_user, require_admin
 import logging
+from src.core.services.email import EmailService
 
 router = APIRouter()
 
@@ -58,6 +59,33 @@ class UpdateMobileRequest(BaseModel):
 
 class UpdateAvatarRequest(BaseModel):
     avatar_url: str = Field(..., description="头像URL地址")
+
+class SendEmailRequest(BaseModel):
+    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    captcha: str
+    scene: str = "register"
+
+class RegisterByEmailRequest(BaseModel):
+    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    email_code: str = Field(pattern=r'^\d{6}$')
+
+class LoginByEmailRequest(BaseModel):
+    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    password: str = Field(min_length=8, max_length=32)
+    captcha: Optional[str] = None  # 图形验证码，选填
+
+class ResetPasswordByEmailRequest(BaseModel):
+    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    old_password: str = Field(min_length=8, max_length=32)
+    new_password: str = Field(min_length=8, max_length=32)
+
+class ForceResetPasswordByEmailRequest(BaseModel):
+    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+
+class UpdateEmailRequest(BaseModel):
+    new_email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    email_code: str = Field(pattern=r'^\d{6}$')
+    captcha: str
 
 @router.get("/captcha")
 async def get_captcha(request: Request):
@@ -543,6 +571,266 @@ async def update_avatar(
             content={
                 "success": False,
                 "code": "AVATAR_UPDATE_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/send-email")
+async def send_email(
+    request: Request,
+    data: SendEmailRequest,
+    db: AsyncSession = Depends(get_session)
+):
+    """发送邮箱验证码"""
+    # 验证图形验证码
+    captcha_service = CaptchaService()
+    if not await captcha_service.verify(request, data.captcha):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "CAPTCHA_ERROR",
+                "message": "图形验证码错误"
+            }
+        )
+    
+    # 发送邮箱验证码
+    email_service = EmailService()
+    result = await email_service.send_code(
+        email=data.email,
+        scene=data.scene,
+        ip=request.client.host
+    )
+    
+    # 如果发送失败（超出限制），返回400状态码
+    if not result.get("success", True):
+        return JSONResponse(
+            status_code=400,
+            content=result
+        )
+    
+    # 发送成功，返回200状态码
+    return JSONResponse(
+        status_code=200,
+        content=result
+    )
+
+@router.post("/register-by-email")
+async def register_by_email(
+    request: Request,
+    data: RegisterByEmailRequest,
+    db: AsyncSession = Depends(get_session)
+):
+    """邮箱注册"""
+    auth_service = AuthService(db)
+    try:
+        # 设置默认密码和昵称
+        default_password = "SealJump"
+        default_nickname = f"用户{data.email.split('@')[0]}"
+        
+        result = await auth_service.register_by_email(
+            email=data.email,
+            email_code=data.email_code,
+            password=default_password,
+            nickname=default_nickname,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "REGISTER_SUCCESS",
+                "message": "注册成功",
+                "data": {
+                    "user": result.get("user"),
+                    "token": result.get("token")
+                }
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "REGISTER_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/login-by-email")
+async def login_by_email(
+    request: Request,
+    data: LoginByEmailRequest,
+    db: AsyncSession = Depends(get_session)
+):
+    """邮箱登录"""
+    logger.info("="*50)
+    logger.info("邮箱登录请求 - 参数:")
+    logger.info(f"email: {data.email}")
+    logger.info(f"password: {'*' * len(data.password)}")
+    logger.info(f"captcha: {data.captcha}")
+    logger.info("请求体原始内容:")
+    request_body = await request.json()
+    logger.info(f"request body: {request_body}")
+    
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.login_by_email(
+            request=request,
+            email=data.email,
+            password=data.password,
+            captcha=data.captcha,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        logger.info("登录成功:")
+        logger.info(f"user_id: {result.get('user', {}).get('id')}")
+        logger.info(f"token: {result.get('token')[:20]}...")
+        logger.info("="*50)
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "LOGIN_SUCCESS",
+                "message": "登录成功",
+                "data": {
+                    "user": result.get("user"),
+                    "token": result.get("token")
+                }
+            }
+        )
+    except ValueError as e:
+        logger.error(f"登录失败: {str(e)}")
+        logger.error("="*50)
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "LOGIN_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/reset-password-by-email")
+async def reset_password_by_email(
+    request: Request,
+    data: ResetPasswordByEmailRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """通过邮箱修改密码"""
+    auth_service = AuthService(db)
+    try:
+        # 验证当前用户是否是邮箱对应的用户
+        if current_user["email"] != data.email:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "success": False,
+                    "code": "PERMISSION_DENIED",
+                    "message": "无权修改其他用户的密码"
+                }
+            )
+            
+        result = await auth_service.reset_password_by_email(
+            email=data.email,
+            old_password=data.old_password,
+            new_password=data.new_password,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "PASSWORD_RESET_SUCCESS",
+                "message": "密码修改成功"
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "PASSWORD_RESET_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/force-reset-password-by-email")
+async def force_reset_password_by_email(
+    request: Request,
+    data: ForceResetPasswordByEmailRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(require_admin)
+):
+    """强制重置邮箱用户的密码为默认密码"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.force_reset_password_by_email(
+            email=data.email,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "PASSWORD_RESET_SUCCESS",
+                "message": "密码已重置为默认密码"
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "PASSWORD_RESET_ERROR",
+                "message": str(e)
+            }
+        )
+
+@router.post("/update-email")
+async def update_email(
+    request: Request,
+    data: UpdateEmailRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """修改邮箱"""
+    auth_service = AuthService(db)
+    try:
+        result = await auth_service.update_email(
+            request=request,
+            user_id=current_user["id"],
+            new_email=data.new_email,
+            email_code=data.email_code,
+            captcha=data.captcha,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "code": "EMAIL_UPDATE_SUCCESS",
+                "message": "邮箱修改成功",
+                "data": result["data"]
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "EMAIL_UPDATE_ERROR",
                 "message": str(e)
             }
         ) 

@@ -49,8 +49,10 @@ async def get_current_user(
     return {
         "id": str(user.id),
         "mobile": user.mobile,
+        "email": user.email,
         "nickname": user.nickname,
-        "level": user.level
+        "level": user.level,
+        "avatar": user.avatar
     }
 
 def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
