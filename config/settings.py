@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     # 会话配置
     SESSION_SECRET_KEY: str
 
+    # 邮件配置
+    EMAIL_SMTP_SERVER: str = "smtp.qq.com"
+    EMAIL_SMTP_PORT: int = 465
+    EMAIL_SENDER_EMAIL: str = ""
+    EMAIL_SENDER_PASSWORD: str = ""
+
     @validator("ALLOWED_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v):
         if isinstance(v, str) and not v.startswith("["):
@@ -72,6 +78,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "allow"  # 允许额外的字段
 
 
 settings = Settings() 
