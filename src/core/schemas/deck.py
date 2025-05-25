@@ -66,7 +66,7 @@ class DeckBase(BaseModel):
 
 class DeckCreate(DeckBase):
     """创建卡组请求模型"""
-    user_id: UUID = Field(..., description="用户ID")
+    pass
 
 class DeckUpdate(DeckBase):
     """更新卡组请求模型"""
