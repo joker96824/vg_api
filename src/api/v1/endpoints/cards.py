@@ -7,6 +7,7 @@ from uuid import UUID
 from src.core.database import get_session
 from src.core.schemas.card import CardResponse, CardQueryParams
 from src.core.services.card import CardService
+from src.core.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -14,7 +15,8 @@ router = APIRouter()
 @router.get("/cards", response_model=List[CardResponse])
 async def get_cards(
     params: CardQueryParams = Depends(),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     查询卡牌列表
@@ -58,7 +60,8 @@ async def get_card_by_id(
 @router.get("/cards/code/{card_code}", response_model=CardResponse)
 async def get_card_by_code(
     card_code: str,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     根据卡牌编号查询卡牌
