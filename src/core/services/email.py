@@ -30,25 +30,6 @@ class EmailService:
         self.smtp_port = settings.EMAIL_SMTP_PORT
         self.sender_email = settings.EMAIL_SENDER_EMAIL
         self.sender_password = settings.EMAIL_SENDER_PASSWORD
-        
-        # 打印配置信息
-        logger.info("="*50)
-        logger.info("邮件服务初始化")
-        logger.info(f"SMTP服务器: {self.smtp_server}")
-        logger.info(f"SMTP端口: {self.smtp_port}")
-        logger.info(f"发件人邮箱: {self.sender_email}")
-        logger.info(f"发件人密码长度: {len(self.sender_password) if self.sender_password else 0}")
-        logger.info("="*50)
-        
-        # 验证配置
-        if not self.sender_email:
-            logger.error("发件人邮箱未配置")
-        if not self.sender_password:
-            logger.error("发件人密码未配置")
-        if not self.smtp_server:
-            logger.error("SMTP服务器未配置")
-        if not self.smtp_port:
-            logger.error("SMTP端口未配置")
 
     async def send_code(self, email: str, scene: str = "register", ip: str = "") -> dict:
         """发送邮箱验证码
@@ -156,51 +137,67 @@ class EmailService:
         Returns:
             bool: 是否发送成功
         """
-        # 创建邮件对象
-        msg = MIMEMultipart()
-        msg['From'] = f"海豹乐园 <{self.sender_email}>"
-        msg['To'] = to_email
-        msg['Subject'] = Header(subject, 'utf-8')
-        
-        # 添加抄送和密送
-        if cc_emails:
-            msg['Cc'] = ', '.join(cc_emails)
-        if bcc_emails:
-            msg['Bcc'] = ', '.join(bcc_emails)
-            
-        # 添加邮件内容
-        msg.attach(MIMEText(content, 'html', 'utf-8'))
-        
-        # 创建SSL上下文
-        import ssl
-        context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        
-        # 使用SMTP_SSL连接服务器并发送
-        server = smtplib.SMTP_SSL(
-            self.smtp_server,
-            self.smtp_port,
-            timeout=30,
-            context=context
-        )
         try:
-            server.login(self.sender_email, self.sender_password)
+            # 创建邮件对象
+            msg = MIMEMultipart()
             
-            # 获取所有收件人
-            recipients = [to_email]
+            # 添加基本邮件头
+            msg['From'] = f"SealJump <{self.sender_email}>"
+            msg['To'] = to_email
+            msg['Subject'] = Header(subject, 'utf-8')
+            
+            # 添加额外的邮件头以提高可信度
+            msg['Message-ID'] = f"<{datetime.now().strftime('%Y%m%d%H%M%S')}@{self.smtp_server}>"
+            msg['Date'] = datetime.now().strftime('%a, %d %b %Y %H:%M:%S +0800')
+            msg['X-Mailer'] = 'SealJump Mailer'
+            msg['X-Priority'] = '1'  # 高优先级
+            msg['X-MSMail-Priority'] = 'High'
+            msg['Importance'] = 'high'
+            
+            # 添加抄送和密送
             if cc_emails:
-                recipients.extend(cc_emails)
+                msg['Cc'] = ', '.join(cc_emails)
             if bcc_emails:
-                recipients.extend(bcc_emails)
+                msg['Bcc'] = ', '.join(bcc_emails)
+                
+            # 添加邮件内容
+            msg.attach(MIMEText(content, 'html', 'utf-8'))
             
-            server.sendmail(self.sender_email, recipients, msg.as_string())
-            return True
-        finally:
+            # 创建SSL上下文
+            import ssl
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            
+            # 使用SMTP_SSL连接服务器并发送
+            server = smtplib.SMTP_SSL(
+                self.smtp_server,
+                self.smtp_port,
+                timeout=30,
+                context=context,
+                local_hostname='localhost'
+            )
+            
             try:
-                server.quit()
-            except:
-                pass
+                server.login(self.sender_email, self.sender_password)
+                
+                # 获取所有收件人
+                recipients = [to_email]
+                if cc_emails:
+                    recipients.extend(cc_emails)
+                if bcc_emails:
+                    recipients.extend(bcc_emails)
+                
+                server.sendmail(self.sender_email, recipients, msg.as_string())
+                return True
+            finally:
+                try:
+                    server.quit()
+                except:
+                    pass
+        except Exception as e:
+            logger.error(f"发送邮件失败: {str(e)}")
+            return False
 
     async def send_verification_code(self, to_email: str, code: str) -> bool:
         """发送验证码邮件
