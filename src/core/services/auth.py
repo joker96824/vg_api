@@ -958,4 +958,10 @@ class AuthService:
             "data": {
                 "email": new_email
             }
-        } 
+        }
+
+    async def check_email_exists(self, email: str) -> bool:
+        """检查邮箱是否存在"""
+        stmt = select(User).where(User.email_hash == self._hash_email(email))
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None 

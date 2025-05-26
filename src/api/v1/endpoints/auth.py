@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.auth import get_current_user, require_admin
 import logging
 from src.core.services.email import EmailService
+from sqlalchemy import select
+from src.core.models.user import User
+from src.core.models.login_log import LoginLog
 
 router = APIRouter()
 
@@ -63,7 +66,7 @@ class UpdateAvatarRequest(BaseModel):
 class SendEmailRequest(BaseModel):
     email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
     captcha: str
-    scene: str = "register"
+    scene: str = Field(..., description="验证码场景：register-注册, reset_password-重置密码, update_email-修改邮箱")
 
 class RegisterByEmailRequest(BaseModel):
     email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
@@ -86,6 +89,15 @@ class UpdateEmailRequest(BaseModel):
     new_email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
     email_code: str = Field(pattern=r'^\d{6}$')
     captcha: str
+
+class SendResetPasswordEmailRequest(BaseModel):
+    email: str = Field(..., description="邮箱地址")
+    captcha: str = Field(..., description="图形验证码")
+
+class ResetPasswordWithEmailRequest(BaseModel):
+    email: str = Field(..., description="邮箱地址")
+    email_code: str = Field(..., description="邮箱验证码")
+    new_password: str = Field(..., min_length=6, max_length=20, description="新密码")
 
 @router.get("/captcha")
 async def get_captcha(request: Request):
@@ -337,13 +349,25 @@ async def reset_password(
 @router.post("/clear-login-errors")
 async def clear_login_errors(
     request: Request,
-    data: ClearLoginErrorsRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
 ):
     """清除登录错误计数"""
     auth_service = AuthService(db)
     try:
-        result = await auth_service.clear_login_errors(data.mobile)
+        # 从token中获取用户标识（手机号或邮箱）
+        account = current_user.get("mobile") or current_user.get("email")
+        if not account:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "code": "INVALID_USER",
+                    "message": "无效的用户信息"
+                }
+            )
+            
+        result = await auth_service.clear_login_errors(account)
         return JSONResponse(
             status_code=200,
             content={
@@ -594,6 +618,31 @@ async def send_email(
             }
         )
     
+    # 验证场景是否有效
+    valid_scenes = ["register", "reset_password", "update_email"]
+    if data.scene not in valid_scenes:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "code": "INVALID_SCENE",
+                "message": "无效的验证码场景"
+            }
+        )
+    
+    # 如果是重置密码场景，验证邮箱是否存在
+    if data.scene == "reset_password":
+        auth_service = AuthService(db)
+        if not await auth_service.check_email_exists(data.email):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "code": "EMAIL_NOT_EXISTS",
+                    "message": "该邮箱未注册"
+                }
+            )
+    
     # 发送邮箱验证码
     email_service = EmailService()
     result = await email_service.send_code(
@@ -762,28 +811,70 @@ async def reset_password_by_email(
             }
         )
 
-@router.post("/force-reset-password-by-email")
-async def force_reset_password_by_email(
+@router.post("/force-reset-password/verify")
+async def verify_and_reset_password(
     request: Request,
-    data: ForceResetPasswordByEmailRequest,
-    db: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(require_admin)
+    data: ResetPasswordWithEmailRequest,
+    db: AsyncSession = Depends(get_session)
 ):
-    """强制重置邮箱用户的密码为默认密码"""
+    """验证邮箱验证码并重置密码"""
+    # 验证邮箱验证码
+    email_service = EmailService()
+    verify_result = await email_service.verify_code(
+        email=data.email,
+        code=data.email_code,
+        scene="reset_password"
+    )
+    
+    if not verify_result.get("success", True):
+        return JSONResponse(
+            status_code=400,
+            content=verify_result
+        )
+    
+    # 重置密码
     auth_service = AuthService(db)
     try:
-        result = await auth_service.force_reset_password_by_email(
-            email=data.email,
+        # 查找用户
+        stmt = select(User).where(User.email_hash == auth_service._hash_email(data.email))
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "code": "USER_NOT_EXISTS",
+                    "message": "用户不存在"
+                }
+            )
+            
+        # 直接更新密码
+        user.password_hash = auth_service._hash_password(data.new_password)
+        
+        # 清除密码错误计数
+        auth_service._clear_password_error(data.email)
+        
+        # 记录密码重置日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=5,  # 密码重置
             ip=request.client.host,
-            device_fingerprint=request.headers.get("User-Agent", "")
+            device_info={"user_agent": request.headers.get("User-Agent", "")},
+            status=1,  # 成功
+            remark="通过邮箱验证码重置密码"
         )
+        db.add(login_log)
+        
+        await db.commit()
         
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
-                "code": "PASSWORD_RESET_SUCCESS",
-                "message": "密码已重置为默认密码"
+                "code": "RESET_PASSWORD_SUCCESS",
+                "message": "密码重置成功"
             }
         )
     except ValueError as e:
@@ -791,7 +882,7 @@ async def force_reset_password_by_email(
             status_code=400,
             content={
                 "success": False,
-                "code": "PASSWORD_RESET_ERROR",
+                "code": "RESET_PASSWORD_ERROR",
                 "message": str(e)
             }
         )
