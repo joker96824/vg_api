@@ -240,25 +240,21 @@ async def logout(
             message=str(e)
         )
 
-@router.post("/reset-password")
+@router.post("/reset-password", response_model=AuthSimpleSuccessResponse)
 async def reset_password(
     request: Request,
     data: ResetPasswordRequest,
     db: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(get_current_user)  # 添加JWT验证
+    current_user: dict = Depends(get_current_user)
 ):
     """修改密码"""
     auth_service = AuthService(db)
     try:
         # 验证当前用户是否是手机号对应的用户
         if current_user["mobile"] != data.mobile:
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "success": False,
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权修改其他用户的密码"
-                }
+            return ErrorResponse.create(
+                code=ResponseCode.PERMISSION_DENIED,
+                message="无权修改其他用户的密码"
             )
             
         result = await auth_service.reset_password(
@@ -269,25 +265,18 @@ async def reset_password(
             device_fingerprint=request.headers.get("User-Agent", "")
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "PASSWORD_RESET_SUCCESS",
-                "message": "密码修改成功"
-            }
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="密码修改成功",
+            data={}
         )
     except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "PASSWORD_RESET_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/clear-login-errors")
+@router.post("/clear-login-errors", response_model=AuthSimpleSuccessResponse)
 async def clear_login_errors(
     request: Request,
     db: AsyncSession = Depends(get_session),
@@ -310,13 +299,9 @@ async def clear_login_errors(
                 "无效的用户信息",
                 用户ID=current_user["id"]
             )
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "success": False,
-                    "code": "INVALID_USER",
-                    "message": "无效的用户信息"
-                }
+            return ErrorResponse.create(
+                code=ResponseCode.INVALID_PARAMS,
+                message="无效的用户信息"
             )
             
         result = await auth_service.clear_login_errors(account)
@@ -327,13 +312,10 @@ async def clear_login_errors(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "CLEAR_ERRORS_SUCCESS",
-                "message": "已清除登录错误计数"
-            }
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="已清除登录错误计数",
+            data={}
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -342,16 +324,12 @@ async def clear_login_errors(
             用户ID=current_user["id"],
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "CLEAR_ERRORS_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/force-reset-password")
+@router.post("/force-reset-password", response_model=AuthSimpleSuccessResponse)
 async def force_reset_password(
     request: Request,
     data: ForceResetPasswordRequest,
@@ -381,13 +359,10 @@ async def force_reset_password(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "PASSWORD_RESET_SUCCESS",
-                "message": "密码已重置为默认密码"
-            }
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="密码已重置为默认密码",
+            data={}
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -397,16 +372,12 @@ async def force_reset_password(
             目标手机号=data.mobile,
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "PASSWORD_RESET_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/check-session")
+@router.post("/check-session", response_model=AuthSimpleSuccessResponse)
 async def check_session(
     request: Request,
     data: CheckSessionRequest,
@@ -433,13 +404,10 @@ async def check_session(
             会话状态=result.get("status")
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "SESSION_CHECK_SUCCESS",
-                "data": result
-            }
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="会话检查成功",
+            data=result
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -448,16 +416,12 @@ async def check_session(
             用户ID=current_user["id"],
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "SESSION_CHECK_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/refresh-token")
+@router.post("/refresh-token", response_model=AuthSuccessResponse)
 async def refresh_token(
     request: Request,
     data: RefreshTokenRequest,
@@ -486,13 +450,13 @@ async def refresh_token(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "TOKEN_REFRESH_SUCCESS",
-                "data": result
-            }
+        return AuthSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="令牌刷新成功",
+            data=AuthToken(
+                user=AuthUser(**result["user"]),
+                token=result["token"]
+            )
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -501,16 +465,12 @@ async def refresh_token(
             用户ID=current_user["id"],
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "TOKEN_REFRESH_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/update-nickname")
+@router.post("/update-nickname", response_model=AuthSimpleSuccessResponse)
 async def update_nickname(
     request: Request,
     data: UpdateNicknameRequest,
@@ -541,14 +501,10 @@ async def update_nickname(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "NICKNAME_UPDATE_SUCCESS",
-                "message": "昵称修改成功",
-                "data": result["data"]
-            }
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="昵称修改成功",
+            data=result["data"]
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -557,16 +513,12 @@ async def update_nickname(
             用户ID=current_user["id"],
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "NICKNAME_UPDATE_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/update-mobile")
+@router.post("/update-mobile", response_model=AuthSimpleSuccessResponse)
 async def update_mobile(
     request: Request,
     data: UpdateMobileRequest,
@@ -600,14 +552,10 @@ async def update_mobile(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "MOBILE_UPDATE_SUCCESS",
-                "message": "手机号修改成功",
-                "data": result["data"]
-            }
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="手机号修改成功",
+            data=result["data"]
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -616,117 +564,130 @@ async def update_mobile(
             用户ID=current_user["id"],
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "MOBILE_UPDATE_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/update-avatar")
+@router.post("/update-avatar", response_model=AuthSimpleSuccessResponse)
 async def update_avatar(
     request: Request,
     data: UpdateAvatarRequest,
     db: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(get_current_user)  # 从JWT令牌中获取当前用户信息
+    current_user: dict = Depends(get_current_user)
 ):
     """修改用户头像"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "修改用户头像",
+            用户ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.update_avatar(
             user_id=current_user["id"],
             avatar_url=data.avatar_url,
             ip=request.client.host,
-            device_fingerprint=request.headers.get("User-Agent", "")  # 获取设备信息
+            device_fingerprint=request.headers.get("User-Agent", "")
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "AVATAR_UPDATE_SUCCESS",
-                "message": "头像修改成功",
-                "data": result["data"]
-            }
+        APILogger.log_response(
+            "修改用户头像",
+            用户ID=current_user["id"],
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="头像修改成功",
+            data=result["data"]
         )
     except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "AVATAR_UPDATE_ERROR",
-                "message": str(e)
-            }
+        APILogger.log_warning(
+            "修改用户头像",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/send-email")
+@router.post("/send-email", response_model=AuthSimpleSuccessResponse)
 async def send_email(
     request: Request,
     data: SendEmailRequest,
     db: AsyncSession = Depends(get_session)
 ):
     """发送邮箱验证码"""
-    # 验证图形验证码
-    captcha_service = CaptchaService()
-    if not await captcha_service.verify(request, data.captcha):
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "CAPTCHA_ERROR",
-                "message": "图形验证码错误"
-            }
+    try:
+        APILogger.log_request(
+            "发送邮箱验证码",
+            邮箱=data.email,
+            IP=request.client.host
         )
-    
-    # 验证场景是否有效
-    valid_scenes = ["register", "reset_password", "update_email"]
-    if data.scene not in valid_scenes:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "INVALID_SCENE",
-                "message": "无效的验证码场景"
-            }
-        )
-    
-    # 如果是重置密码场景，验证邮箱是否存在
-    if data.scene == "reset_password":
-        auth_service = AuthService(db)
-        if not await auth_service.check_email_exists(data.email):
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "success": False,
-                    "code": "EMAIL_NOT_EXISTS",
-                    "message": "该邮箱未注册"
-                }
+        
+        # 验证图形验证码
+        captcha_service = CaptchaService()
+        if not await captcha_service.verify(request, data.captcha):
+            return ErrorResponse.create(
+                code=ResponseCode.INVALID_PARAMS,
+                message="图形验证码错误"
             )
-    
-    # 发送邮箱验证码
-    email_service = EmailService()
-    result = await email_service.send_code(
-        email=data.email,
-        scene=data.scene,
-        ip=request.client.host
-    )
-    
-    # 如果发送失败（超出限制），返回400状态码
-    if not result.get("success", True):
-        return JSONResponse(
-            status_code=400,
-            content=result
+        
+        # 验证场景是否有效
+        valid_scenes = ["register", "reset_password", "update_email"]
+        if data.scene not in valid_scenes:
+            return ErrorResponse.create(
+                code=ResponseCode.INVALID_PARAMS,
+                message="无效的验证码场景"
+            )
+        
+        # 如果是重置密码场景，验证邮箱是否存在
+        if data.scene == "reset_password":
+            auth_service = AuthService(db)
+            if not await auth_service.check_email_exists(data.email):
+                return ErrorResponse.create(
+                    code=ResponseCode.INVALID_PARAMS,
+                    message="该邮箱未注册"
+                )
+        
+        # 发送邮箱验证码
+        email_service = EmailService()
+        result = await email_service.send_code(
+            email=data.email,
+            scene=data.scene,
+            ip=request.client.host
         )
-    
-    # 发送成功，返回200状态码
-    return JSONResponse(
-        status_code=200,
-        content=result
-    )
+        
+        # 如果发送失败（超出限制），返回错误响应
+        if not result.get("success", True):
+            return ErrorResponse.create(
+                code=ResponseCode.INVALID_PARAMS,
+                message=result.get("message", "发送失败")
+            )
+        
+        APILogger.log_response(
+            "发送邮箱验证码",
+            邮箱=data.email,
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="发送成功",
+            data=result
+        )
+    except Exception as e:
+        APILogger.log_error("发送邮箱验证码", e, IP=request.client.host)
+        return ErrorResponse.create(
+            code=ResponseCode.SERVER_ERROR,
+            message=str(e)
+        )
 
-@router.post("/register-by-email")
+@router.post("/register-by-email", response_model=AuthSuccessResponse)
 async def register_by_email(
     request: Request,
     data: RegisterByEmailRequest,
@@ -761,17 +722,13 @@ async def register_by_email(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "REGISTER_SUCCESS",
-                "message": "注册成功",
-                "data": {
-                    "user": result.get("user"),
-                    "token": result.get("token")
-                }
-            }
+        return AuthSuccessResponse.create(
+            code=ResponseCode.CREATE_SUCCESS,
+            message="注册成功",
+            data=AuthToken(
+                user=AuthUser(**result["user"]),
+                token=result["token"]
+            )
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -780,16 +737,12 @@ async def register_by_email(
             邮箱=data.email,
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "REGISTER_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/login-by-email")
+@router.post("/login-by-email", response_model=AuthSuccessResponse)
 async def login_by_email(
     request: Request,
     data: LoginByEmailRequest,
@@ -820,17 +773,13 @@ async def login_by_email(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "LOGIN_SUCCESS",
-                "message": "登录成功",
-                "data": {
-                    "user": result.get("user"),
-                    "token": result.get("token")
-                }
-            }
+        return AuthSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="登录成功",
+            data=AuthToken(
+                user=AuthUser(**result["user"]),
+                token=result["token"]
+            )
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -839,16 +788,12 @@ async def login_by_email(
             邮箱=data.email,
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "LOGIN_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/reset-password-by-email")
+@router.post("/reset-password-by-email", response_model=AuthSimpleSuccessResponse)
 async def reset_password_by_email(
     request: Request,
     data: ResetPasswordByEmailRequest,
@@ -856,17 +801,20 @@ async def reset_password_by_email(
     current_user: dict = Depends(get_current_user)
 ):
     """通过邮箱修改密码"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "通过邮箱修改密码",
+            用户ID=current_user["id"],
+            邮箱=data.email,
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         # 验证当前用户是否是邮箱对应的用户
         if current_user["email"] != data.email:
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "success": False,
-                    "code": "PERMISSION_DENIED",
-                    "message": "无权修改其他用户的密码"
-                }
+            return ErrorResponse.create(
+                code=ResponseCode.PERMISSION_DENIED,
+                message="无权修改其他用户的密码"
             )
             
         result = await auth_service.reset_password_by_email(
@@ -877,25 +825,30 @@ async def reset_password_by_email(
             device_fingerprint=request.headers.get("User-Agent", "")
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "PASSWORD_RESET_SUCCESS",
-                "message": "密码修改成功"
-            }
+        APILogger.log_response(
+            "通过邮箱修改密码",
+            用户ID=current_user["id"],
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="密码修改成功",
+            data={}
         )
     except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "PASSWORD_RESET_ERROR",
-                "message": str(e)
-            }
+        APILogger.log_warning(
+            "通过邮箱修改密码",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/force-reset-password/verify")
+@router.post("/force-reset-password/verify", response_model=AuthSimpleSuccessResponse)
 async def verify_and_reset_password(
     request: Request,
     data: ResetPasswordWithEmailRequest,
@@ -923,9 +876,9 @@ async def verify_and_reset_password(
                 "验证码验证失败",
                 邮箱=data.email
             )
-            return JSONResponse(
-                status_code=400,
-                content=verify_result
+            return ErrorResponse.create(
+                code=ResponseCode.INVALID_PARAMS,
+                message=verify_result.get("message", "验证码验证失败")
             )
         
         # 重置密码
@@ -941,13 +894,9 @@ async def verify_and_reset_password(
                 "用户不存在",
                 邮箱=data.email
             )
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "success": False,
-                    "code": "USER_NOT_EXISTS",
-                    "message": "用户不存在"
-                }
+            return ErrorResponse.create(
+                code=ResponseCode.INVALID_PARAMS,
+                message="用户不存在"
             )
             
         # 直接更新密码
@@ -975,13 +924,10 @@ async def verify_and_reset_password(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "RESET_PASSWORD_SUCCESS",
-                "message": "密码重置成功"
-            }
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="密码重置成功",
+            data={}
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -990,16 +936,12 @@ async def verify_and_reset_password(
             邮箱=data.email,
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "RESET_PASSWORD_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/update-email")
+@router.post("/update-email", response_model=AuthSimpleSuccessResponse)
 async def update_email(
     request: Request,
     data: UpdateEmailRequest,
@@ -1007,8 +949,15 @@ async def update_email(
     current_user: dict = Depends(get_current_user)
 ):
     """修改邮箱"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "修改邮箱",
+            用户ID=current_user["id"],
+            新邮箱=data.new_email,
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.update_email(
             request=request,
             user_id=current_user["id"],
@@ -1019,21 +968,26 @@ async def update_email(
             device_fingerprint=request.headers.get("User-Agent", "")
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "EMAIL_UPDATE_SUCCESS",
-                "message": "邮箱修改成功",
-                "data": result["data"]
-            }
+        APILogger.log_response(
+            "修改邮箱",
+            用户ID=current_user["id"],
+            新邮箱=data.new_email,
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="邮箱修改成功",
+            data=result["data"]
         )
     except ValueError as e:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "EMAIL_UPDATE_ERROR",
-                "message": str(e)
-            }
+        APILogger.log_warning(
+            "修改邮箱",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         ) 
