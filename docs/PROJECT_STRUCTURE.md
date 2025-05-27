@@ -76,6 +76,170 @@
 - `logs/` - 日志文件目录
 - `app.log` - 应用日志文件
 
+## 日志规范
+
+### 日志文件结构
+```
+logs/                           # 日志目录
+├── api.log                     # API请求响应日志
+├── error.log                   # 错误日志
+└── debug.log                   # 调试日志
+```
+
+### 日志记录规范
+
+1. 日志级别使用规范
+   - ERROR: 系统错误、异常、失败操作
+   - WARNING: 警告信息、潜在问题
+   - INFO: 重要操作、状态变更
+   - DEBUG: 调试信息、详细流程
+
+2. 日志格式规范
+   ```
+   [时间] [操作] [级别] | 消息 | 上下文信息
+   ```
+   示例：
+   ```
+   ==================================================
+   [2024-03-21 10:30:45] [获取卡牌列表] [INFO] | 请求 | 用户ID=123 | 查询参数={"name": "测试"}
+   ==================================================
+   ```
+
+3. 日志分隔符规范
+   - 使用50个等号作为分隔符：`==================================================`
+   - 分隔符使用场景：
+     - 每次请求开始和结束
+     - 不同操作之间
+     - 错误日志前后
+     - 重要操作前后
+   - 分隔符示例：
+     ```
+     ==================================================
+     [2024-03-21 10:30:45] [获取卡牌列表] [INFO] | 请求开始
+     [2024-03-21 10:30:45] [获取卡牌列表] [INFO] | 参数 | 用户ID=123
+     [2024-03-21 10:30:46] [获取卡牌列表] [INFO] | 响应 | 结果=成功
+     ==================================================
+     ```
+
+4. 日志内容规范
+   - 请求日志：记录请求参数、用户信息
+   - 响应日志：记录响应结果、处理时间
+   - 错误日志：记录错误详情、堆栈信息
+   - 警告日志：记录警告原因、影响范围
+   - 调试日志：记录详细流程、中间状态
+
+5. 日志工具使用规范
+   ```python
+   from src.core.utils.logger import APILogger
+   
+   # 记录请求
+   APILogger.log_request("操作名称", 用户ID=user_id, 参数=params)
+   
+   # 记录响应
+   APILogger.log_response("操作名称", 结果=result)
+   
+   # 记录警告
+   APILogger.log_warning("操作名称", "警告消息", 原因=reason)
+   
+   # 记录错误
+   APILogger.log_error("操作名称", error, 上下文=context)
+   
+   # 记录调试信息
+   APILogger.log_debug("操作名称", 调试信息=debug_info)
+   ```
+
+6. 日志记录注意事项
+   - 敏感信息（如密码、token）必须脱敏
+   - 大量数据需要截断或摘要
+   - 异常信息需要完整记录
+   - 关键操作必须记录日志
+   - 避免重复记录相同信息
+
+7. 日志文件管理
+   - 按天切割日志文件
+   - 定期归档历史日志
+   - 设置日志文件大小限制
+   - 配置日志保留时间
+
+8. 日志监控
+   - 监控错误日志数量
+   - 监控异常模式
+   - 监控性能问题
+   - 监控安全事件
+
+### 日志工具类说明
+
+`src/core/utils/logger.py` 中的 `APILogger` 类提供以下功能：
+
+1. 基础日志方法
+   - `log_request`: 记录请求信息
+   - `log_response`: 记录响应信息
+   - `log_warning`: 记录警告信息
+   - `log_error`: 记录错误信息
+   - `log_debug`: 记录调试信息
+
+2. 辅助方法
+   - `_format_log_data`: 格式化日志数据
+   - `_get_logger`: 获取logger实例
+   - `format_card_info`: 格式化卡牌信息
+
+3. 使用示例
+   ```python
+   # 在API端点中使用
+   @router.get("/cards")
+   async def get_cards():
+       try:
+           APILogger.log_request("获取卡牌列表", 参数=params)
+           result = await service.get_cards()
+           APILogger.log_response("获取卡牌列表", 结果=result)
+           return result
+       except Exception as e:
+           APILogger.log_error("获取卡牌列表", e)
+           raise
+   ```
+
+### 日志配置
+
+1. 日志配置项
+   ```python
+   LOGGING_CONFIG = {
+       "version": 1,
+       "disable_existing_loggers": False,
+       "formatters": {
+           "default": {
+               "format": "[%(asctime)s] [%(name)s] [%(levelname)s] | %(message)s"
+           }
+       },
+       "handlers": {
+           "console": {
+               "class": "logging.StreamHandler",
+               "formatter": "default"
+           },
+           "file": {
+               "class": "logging.handlers.RotatingFileHandler",
+               "filename": "logs/api.log",
+               "maxBytes": 10485760,  # 10MB
+               "backupCount": 5
+           }
+       },
+       "loggers": {
+           "api": {
+               "handlers": ["console", "file"],
+               "level": "INFO"
+           }
+       }
+   }
+   ```
+
+2. 环境变量配置
+   ```
+   LOG_LEVEL=INFO
+   LOG_FORMAT=default
+   LOG_FILE=logs/api.log
+   LOG_MAX_BYTES=10485760
+   LOG_BACKUP_COUNT=5
+   ```
+
 ## 文件命名规范
 
 1. Python文件使用小写字母，单词间用下划线连接

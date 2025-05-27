@@ -7,11 +7,11 @@ from src.core.services.sms import SMSService
 from src.core.database import get_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.auth import get_current_user, require_admin
-import logging
 from src.core.services.email import EmailService
 from sqlalchemy import select
 from src.core.models.user import User
 from src.core.models.login_log import LoginLog
+from src.core.utils.logger import APILogger
 from src.core.schemas.auth import (
     SendSMSRequest, RegisterRequest, LoginRequest, LogoutRequest,
     ResetPasswordRequest, ClearLoginErrorsRequest, ForceResetPasswordRequest,
@@ -24,15 +24,28 @@ from src.core.schemas.auth import (
 
 router = APIRouter()
 
-logger = logging.getLogger(__name__)
-
 @router.get("/captcha")
 async def get_captcha(request: Request):
     """获取图形验证码"""
-    captcha_service = CaptchaService()
-    print(request.session)
-    image = await captcha_service.generate(request)
-    return Response(content=image.getvalue(), media_type="image/png")
+    try:
+        APILogger.log_request(
+            "获取图形验证码",
+            IP=request.client.host,
+            设备信息=request.headers.get("User-Agent", "")
+        )
+        
+        captcha_service = CaptchaService()
+        image = await captcha_service.generate(request)
+        
+        APILogger.log_response(
+            "获取图形验证码",
+            操作结果="成功"
+        )
+        
+        return Response(content=image.getvalue(), media_type="image/png")
+    except Exception as e:
+        APILogger.log_error("获取图形验证码", e, IP=request.client.host)
+        raise HTTPException(status_code=500, detail=f"获取验证码失败: {str(e)}")
 
 @router.post("/send-sms")
 async def send_sms(
@@ -82,12 +95,19 @@ async def register(
     db: AsyncSession = Depends(get_session)
 ):
     """用户注册"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "用户注册",
+            手机号=data.mobile,
+            IP=request.client.host,
+            设备信息=request.headers.get("User-Agent", "")
+        )
+        
         # 设置默认密码和昵称
         default_password = "SealJump"
         default_nickname = f"用户{data.mobile[-6:]}"
         
+        auth_service = AuthService(db)
         result = await auth_service.register(
             mobile=data.mobile,
             sms_code=data.sms_code,
@@ -95,6 +115,12 @@ async def register(
             nickname=default_nickname,
             ip=request.client.host,
             device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "用户注册",
+            用户ID=result.get("user", {}).get("id"),
+            操作结果="成功"
         )
         
         return JSONResponse(
@@ -110,6 +136,12 @@ async def register(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "用户注册",
+            "注册失败",
+            手机号=data.mobile,
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -126,17 +158,15 @@ async def login(
     db: AsyncSession = Depends(get_session)
 ):
     """用户登录"""
-    logger.info("="*50)
-    logger.info("登录请求 - 参数:")
-    logger.info(f"mobile: {data.mobile}")
-    logger.info(f"password: {'*' * len(data.password)}")
-    logger.info(f"captcha: {data.captcha}")
-    logger.info("请求体原始内容:")
-    request_body = await request.json()
-    logger.info(f"request body: {request_body}")
-    
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "用户登录",
+            手机号=data.mobile,
+            IP=request.client.host,
+            设备信息=request.headers.get("User-Agent", "")
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.login(
             request=request,
             mobile=data.mobile,
@@ -146,10 +176,11 @@ async def login(
             device_fingerprint=request.headers.get("User-Agent", "")
         )
         
-        logger.info("登录成功:")
-        logger.info(f"user_id: {result.get('user', {}).get('id')}")
-        logger.info(f"token: {result.get('token')[:20]}...")
-        logger.info("="*50)
+        APILogger.log_response(
+            "用户登录",
+            用户ID=result.get("user", {}).get("id"),
+            操作结果="成功"
+        )
         
         return JSONResponse(
             status_code=200,
@@ -164,8 +195,12 @@ async def login(
             }
         )
     except ValueError as e:
-        logger.error(f"登录失败: {str(e)}")
-        logger.error("="*50)
+        APILogger.log_warning(
+            "用户登录",
+            "登录失败",
+            手机号=data.mobile,
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -181,31 +216,39 @@ async def logout(
     db: AsyncSession = Depends(get_session)
 ):
     """用户登出"""
-    logger.info("="*50)
-    logger.info("登出请求")
-    
-    # 从请求头获取 token
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        logger.error("未提供有效的认证token")
-        logger.error("="*50)
-        return JSONResponse(
-            status_code=401,
-            content={
-                "success": False,
-                "code": "INVALID_TOKEN",
-                "message": "未提供有效的认证token"
-            }
-        )
-    
-    token = auth_header.split(" ")[1]
-    logger.info(f"token: {token[:20]}...")
-    
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "用户登出",
+            IP=request.client.host,
+            设备信息=request.headers.get("User-Agent", "")
+        )
+        
+        # 从请求头获取 token
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            APILogger.log_warning(
+                "用户登出",
+                "未提供有效的认证token",
+                IP=request.client.host
+            )
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "success": False,
+                    "code": "INVALID_TOKEN",
+                    "message": "未提供有效的认证token"
+                }
+            )
+        
+        token = auth_header.split(" ")[1]
+        auth_service = AuthService(db)
         await auth_service.logout(token)
-        logger.info("登出成功")
-        logger.info("="*50)
+        
+        APILogger.log_response(
+            "用户登出",
+            操作结果="成功"
+        )
+        
         return JSONResponse(
             status_code=200,
             content={
@@ -215,8 +258,11 @@ async def logout(
             }
         )
     except ValueError as e:
-        logger.error(f"登出失败: {str(e)}")
-        logger.error("="*50)
+        APILogger.log_warning(
+            "用户登出",
+            "登出失败",
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -280,11 +326,22 @@ async def clear_login_errors(
     current_user: dict = Depends(get_current_user)
 ):
     """清除登录错误计数"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "清除登录错误计数",
+            用户ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         # 从token中获取用户标识（手机号或邮箱）
         account = current_user.get("mobile") or current_user.get("email")
         if not account:
+            APILogger.log_warning(
+                "清除登录错误计数",
+                "无效的用户信息",
+                用户ID=current_user["id"]
+            )
             return JSONResponse(
                 status_code=400,
                 content={
@@ -295,6 +352,13 @@ async def clear_login_errors(
             )
             
         result = await auth_service.clear_login_errors(account)
+        
+        APILogger.log_response(
+            "清除登录错误计数",
+            用户ID=current_user["id"],
+            操作结果="成功"
+        )
+        
         return JSONResponse(
             status_code=200,
             content={
@@ -304,6 +368,12 @@ async def clear_login_errors(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "清除登录错误计数",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -321,12 +391,26 @@ async def force_reset_password(
     current_user: dict = Depends(require_admin)
 ):
     """强制重置密码为默认密码"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "强制重置密码",
+            管理员ID=current_user["id"],
+            目标手机号=data.mobile,
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.force_reset_password(
             mobile=data.mobile,
             ip=request.client.host,
             device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "强制重置密码",
+            管理员ID=current_user["id"],
+            目标手机号=data.mobile,
+            操作结果="成功"
         )
         
         return JSONResponse(
@@ -338,6 +422,13 @@ async def force_reset_password(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "强制重置密码",
+            "操作失败",
+            管理员ID=current_user["id"],
+            目标手机号=data.mobile,
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -355,11 +446,23 @@ async def check_session(
     current_user: dict = Depends(get_current_user)
 ):
     """检查会话状态"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "检查会话状态",
+            用户ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.check_session(
             user_id=current_user["id"],
             token=data.token
+        )
+        
+        APILogger.log_response(
+            "检查会话状态",
+            用户ID=current_user["id"],
+            会话状态=result.get("status")
         )
         
         return JSONResponse(
@@ -371,6 +474,12 @@ async def check_session(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "检查会话状态",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -388,13 +497,25 @@ async def refresh_token(
     current_user: dict = Depends(get_current_user)
 ):
     """刷新令牌"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "刷新令牌",
+            用户ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.refresh_token(
             user_id=current_user["id"],
             old_token=data.token,
             ip=request.client.host,
             device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "刷新令牌",
+            用户ID=current_user["id"],
+            操作结果="成功"
         )
         
         return JSONResponse(
@@ -406,6 +527,12 @@ async def refresh_token(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "刷新令牌",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -420,16 +547,30 @@ async def update_nickname(
     request: Request,
     data: UpdateNicknameRequest,
     db: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(get_current_user)  # 从JWT令牌中获取当前用户信息
+    current_user: dict = Depends(get_current_user)
 ):
     """修改用户昵称"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "修改用户昵称",
+            用户ID=current_user["id"],
+            新昵称=data.nickname,
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.update_nickname(
             user_id=current_user["id"],
             new_nickname=data.nickname,
             ip=request.client.host,
-            device_fingerprint=request.headers.get("User-Agent", "")  # 获取设备信息
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "修改用户昵称",
+            用户ID=current_user["id"],
+            新昵称=data.nickname,
+            操作结果="成功"
         )
         
         return JSONResponse(
@@ -442,6 +583,12 @@ async def update_nickname(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "修改用户昵称",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -456,11 +603,18 @@ async def update_mobile(
     request: Request,
     data: UpdateMobileRequest,
     db: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(get_current_user)  # 从JWT令牌中获取当前用户信息
+    current_user: dict = Depends(get_current_user)
 ):
     """修改手机号"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "修改手机号",
+            用户ID=current_user["id"],
+            新手机号=data.new_mobile,
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.update_mobile(
             request=request,
             user_id=current_user["id"],
@@ -468,7 +622,14 @@ async def update_mobile(
             sms_code=data.sms_code,
             captcha=data.captcha,
             ip=request.client.host,
-            device_fingerprint=request.headers.get("User-Agent", "")  # 获取设备信息
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "修改手机号",
+            用户ID=current_user["id"],
+            新手机号=data.new_mobile,
+            操作结果="成功"
         )
         
         return JSONResponse(
@@ -481,6 +642,12 @@ async def update_mobile(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "修改手机号",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -598,12 +765,19 @@ async def register_by_email(
     db: AsyncSession = Depends(get_session)
 ):
     """邮箱注册"""
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "邮箱注册",
+            邮箱=data.email,
+            IP=request.client.host,
+            设备信息=request.headers.get("User-Agent", "")
+        )
+        
         # 设置默认密码和昵称
         default_password = "SealJump"
         default_nickname = f"用户{data.email.split('@')[0]}"
         
+        auth_service = AuthService(db)
         result = await auth_service.register_by_email(
             email=data.email,
             email_code=data.email_code,
@@ -611,6 +785,12 @@ async def register_by_email(
             nickname=default_nickname,
             ip=request.client.host,
             device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "邮箱注册",
+            用户ID=result.get("user", {}).get("id"),
+            操作结果="成功"
         )
         
         return JSONResponse(
@@ -626,6 +806,12 @@ async def register_by_email(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "邮箱注册",
+            "注册失败",
+            邮箱=data.email,
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -642,17 +828,15 @@ async def login_by_email(
     db: AsyncSession = Depends(get_session)
 ):
     """邮箱登录"""
-    logger.info("="*50)
-    logger.info("邮箱登录请求 - 参数:")
-    logger.info(f"email: {data.email}")
-    logger.info(f"password: {'*' * len(data.password)}")
-    logger.info(f"captcha: {data.captcha}")
-    logger.info("请求体原始内容:")
-    request_body = await request.json()
-    logger.info(f"request body: {request_body}")
-    
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "邮箱登录",
+            邮箱=data.email,
+            IP=request.client.host,
+            设备信息=request.headers.get("User-Agent", "")
+        )
+        
+        auth_service = AuthService(db)
         result = await auth_service.login_by_email(
             request=request,
             email=data.email,
@@ -662,10 +846,11 @@ async def login_by_email(
             device_fingerprint=request.headers.get("User-Agent", "")
         )
         
-        logger.info("登录成功:")
-        logger.info(f"user_id: {result.get('user', {}).get('id')}")
-        logger.info(f"token: {result.get('token')[:20]}...")
-        logger.info("="*50)
+        APILogger.log_response(
+            "邮箱登录",
+            用户ID=result.get("user", {}).get("id"),
+            操作结果="成功"
+        )
         
         return JSONResponse(
             status_code=200,
@@ -680,8 +865,12 @@ async def login_by_email(
             }
         )
     except ValueError as e:
-        logger.error(f"登录失败: {str(e)}")
-        logger.error("="*50)
+        APILogger.log_warning(
+            "邮箱登录",
+            "登录失败",
+            邮箱=data.email,
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -745,29 +934,45 @@ async def verify_and_reset_password(
     db: AsyncSession = Depends(get_session)
 ):
     """验证邮箱验证码并重置密码"""
-    # 验证邮箱验证码
-    email_service = EmailService()
-    verify_result = await email_service.verify_code(
-        email=data.email,
-        code=data.email_code,
-        scene="reset_password"
-    )
-    
-    if not verify_result.get("success", True):
-        return JSONResponse(
-            status_code=400,
-            content=verify_result
-        )
-    
-    # 重置密码
-    auth_service = AuthService(db)
     try:
+        APILogger.log_request(
+            "验证邮箱验证码并重置密码",
+            邮箱=data.email,
+            IP=request.client.host
+        )
+        
+        # 验证邮箱验证码
+        email_service = EmailService()
+        verify_result = await email_service.verify_code(
+            email=data.email,
+            code=data.email_code,
+            scene="reset_password"
+        )
+        
+        if not verify_result.get("success", True):
+            APILogger.log_warning(
+                "验证邮箱验证码并重置密码",
+                "验证码验证失败",
+                邮箱=data.email
+            )
+            return JSONResponse(
+                status_code=400,
+                content=verify_result
+            )
+        
+        # 重置密码
+        auth_service = AuthService(db)
         # 查找用户
         stmt = select(User).where(User.email_hash == auth_service._hash_email(data.email))
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
         
         if not user:
+            APILogger.log_warning(
+                "验证邮箱验证码并重置密码",
+                "用户不存在",
+                邮箱=data.email
+            )
             return JSONResponse(
                 status_code=400,
                 content={
@@ -796,6 +1001,12 @@ async def verify_and_reset_password(
         
         await db.commit()
         
+        APILogger.log_response(
+            "验证邮箱验证码并重置密码",
+            用户ID=user.id,
+            操作结果="成功"
+        )
+        
         return JSONResponse(
             status_code=200,
             content={
@@ -805,6 +1016,12 @@ async def verify_and_reset_password(
             }
         )
     except ValueError as e:
+        APILogger.log_warning(
+            "验证邮箱验证码并重置密码",
+            "操作失败",
+            邮箱=data.email,
+            错误信息=str(e)
+        )
         return JSONResponse(
             status_code=400,
             content={
