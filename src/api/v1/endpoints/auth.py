@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
 from typing import Optional
 from src.core.services.auth import AuthService
 from src.core.services.captcha import CaptchaService
@@ -13,91 +12,19 @@ from src.core.services.email import EmailService
 from sqlalchemy import select
 from src.core.models.user import User
 from src.core.models.login_log import LoginLog
+from src.core.schemas.auth import (
+    SendSMSRequest, RegisterRequest, LoginRequest, LogoutRequest,
+    ResetPasswordRequest, ClearLoginErrorsRequest, ForceResetPasswordRequest,
+    CheckSessionRequest, RefreshTokenRequest, UpdateNicknameRequest,
+    UpdateMobileRequest, UpdateAvatarRequest, SendEmailRequest,
+    RegisterByEmailRequest, LoginByEmailRequest, ResetPasswordByEmailRequest,
+    ForceResetPasswordByEmailRequest, UpdateEmailRequest,
+    SendResetPasswordEmailRequest, ResetPasswordWithEmailRequest
+)
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
-
-class SendSMSRequest(BaseModel):
-    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
-    captcha: str
-    scene: str = "register"
-
-class RegisterRequest(BaseModel):
-    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
-    sms_code: str = Field(pattern=r'^\d{6}$')
-
-class LoginRequest(BaseModel):
-    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
-    password: str = Field(min_length=8, max_length=32)
-    captcha: Optional[str] = None  # 图形验证码，选填
-
-class LogoutRequest(BaseModel):
-    token: str
-
-class ResetPasswordRequest(BaseModel):
-    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
-    old_password: str = Field(min_length=8, max_length=32)
-    new_password: str = Field(min_length=8, max_length=32)
-
-class ClearLoginErrorsRequest(BaseModel):
-    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
-
-class ForceResetPasswordRequest(BaseModel):
-    mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
-
-class CheckSessionRequest(BaseModel):
-    token: str
-
-class RefreshTokenRequest(BaseModel):
-    token: str
-
-class UpdateNicknameRequest(BaseModel):
-    nickname: str = Field(min_length=2, max_length=32)
-
-class UpdateMobileRequest(BaseModel):
-    new_mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
-    sms_code: str = Field(pattern=r'^\d{6}$')
-    captcha: str
-
-class UpdateAvatarRequest(BaseModel):
-    avatar_url: str = Field(..., description="头像URL地址")
-
-class SendEmailRequest(BaseModel):
-    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-    captcha: str
-    scene: str = Field(..., description="验证码场景：register-注册, reset_password-重置密码, update_email-修改邮箱")
-
-class RegisterByEmailRequest(BaseModel):
-    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-    email_code: str = Field(pattern=r'^\d{6}$')
-
-class LoginByEmailRequest(BaseModel):
-    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-    password: str = Field(min_length=8, max_length=32)
-    captcha: Optional[str] = None  # 图形验证码，选填
-
-class ResetPasswordByEmailRequest(BaseModel):
-    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-    old_password: str = Field(min_length=8, max_length=32)
-    new_password: str = Field(min_length=8, max_length=32)
-
-class ForceResetPasswordByEmailRequest(BaseModel):
-    email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-
-class UpdateEmailRequest(BaseModel):
-    new_email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
-    email_code: str = Field(pattern=r'^\d{6}$')
-    captcha: str
-
-class SendResetPasswordEmailRequest(BaseModel):
-    email: str = Field(..., description="邮箱地址")
-    captcha: str = Field(..., description="图形验证码")
-
-class ResetPasswordWithEmailRequest(BaseModel):
-    email: str = Field(..., description="邮箱地址")
-    email_code: str = Field(..., description="邮箱验证码")
-    new_password: str = Field(..., min_length=6, max_length=20, description="新密码")
 
 @router.get("/captcha")
 async def get_captcha(request: Request):
