@@ -19,8 +19,11 @@ from src.core.schemas.auth import (
     UpdateMobileRequest, UpdateAvatarRequest, SendEmailRequest,
     RegisterByEmailRequest, LoginByEmailRequest, ResetPasswordByEmailRequest,
     ForceResetPasswordByEmailRequest, UpdateEmailRequest,
-    SendResetPasswordEmailRequest, ResetPasswordWithEmailRequest
+    SendResetPasswordEmailRequest, ResetPasswordWithEmailRequest,
+    AuthSuccessResponse, AuthUserSuccessResponse, AuthSimpleSuccessResponse,
+    AuthUser, AuthToken
 )
+from src.core.schemas.response import ResponseCode, ErrorResponse
 
 router = APIRouter()
 
@@ -47,7 +50,7 @@ async def get_captcha(request: Request):
         APILogger.log_error("获取图形验证码", e, IP=request.client.host)
         raise HTTPException(status_code=500, detail=f"获取验证码失败: {str(e)}")
 
-@router.post("/send-sms")
+@router.post("/send-sms", response_model=AuthSimpleSuccessResponse)
 async def send_sms(
     request: Request,
     data: SendSMSRequest,
@@ -55,16 +58,11 @@ async def send_sms(
 ):
     """发送短信验证码"""
     # 验证图形验证码
-    print(request.session)
     captcha_service = CaptchaService()
     if not await captcha_service.verify(request, data.captcha):
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "CAPTCHA_ERROR",
-                "message": "图形验证码错误"
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message="图形验证码错误"
         )
     
     # 发送短信验证码
@@ -75,20 +73,21 @@ async def send_sms(
         ip=request.client.host
     )
     
-    # 如果发送失败（超出限制），返回400状态码
+    # 如果发送失败（超出限制），返回错误响应
     if not result.get("success", True):
-        return JSONResponse(
-            status_code=400,
-            content=result
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=result.get("message", "发送失败")
         )
     
-    # 发送成功，返回200状态码
-    return JSONResponse(
-        status_code=200,
-        content=result
+    # 发送成功，返回成功响应
+    return AuthSimpleSuccessResponse.create(
+        code=ResponseCode.SUCCESS,
+        message="发送成功",
+        data=result
     )
 
-@router.post("/register")
+@router.post("/register", response_model=AuthSuccessResponse)
 async def register(
     request: Request,
     data: RegisterRequest,
@@ -123,17 +122,13 @@ async def register(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "REGISTER_SUCCESS",
-                "message": "注册成功",
-                "data": {
-                    "user": result.get("user"),
-                    "token": result.get("token")
-                }
-            }
+        return AuthSuccessResponse.create(
+            code=ResponseCode.CREATE_SUCCESS,
+            message="注册成功",
+            data=AuthToken(
+                user=AuthUser(**result["user"]),
+                token=result["token"]
+            )
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -142,16 +137,12 @@ async def register(
             手机号=data.mobile,
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "REGISTER_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/login")
+@router.post("/login", response_model=AuthSuccessResponse)
 async def login(
     request: Request,
     data: LoginRequest,
@@ -182,17 +173,13 @@ async def login(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "LOGIN_SUCCESS",
-                "message": "登录成功",
-                "data": {
-                    "user": result.get("user"),
-                    "token": result.get("token")
-                }
-            }
+        return AuthSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="登录成功",
+            data=AuthToken(
+                user=AuthUser(**result["user"]),
+                token=result["token"]
+            )
         )
     except ValueError as e:
         APILogger.log_warning(
@@ -201,16 +188,12 @@ async def login(
             手机号=data.mobile,
             错误信息=str(e)
         )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "LOGIN_ERROR",
-                "message": str(e)
-            }
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
         )
 
-@router.post("/logout")
+@router.post("/logout", response_model=AuthSimpleSuccessResponse)
 async def logout(
     request: Request,
     db: AsyncSession = Depends(get_session)
@@ -231,13 +214,9 @@ async def logout(
                 "未提供有效的认证token",
                 IP=request.client.host
             )
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "success": False,
-                    "code": "INVALID_TOKEN",
-                    "message": "未提供有效的认证token"
-                }
+            return ErrorResponse.create(
+                code=ResponseCode.UNAUTHORIZED,
+                message="未提供有效的认证token"
             )
         
         token = auth_header.split(" ")[1]
@@ -249,27 +228,16 @@ async def logout(
             操作结果="成功"
         )
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "success": True,
-                "code": "LOGOUT_SUCCESS",
-                "message": "登出成功"
-            }
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="登出成功",
+            data={}
         )
-    except ValueError as e:
-        APILogger.log_warning(
-            "用户登出",
-            "登出失败",
-            错误信息=str(e)
-        )
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "code": "LOGOUT_ERROR",
-                "message": str(e)
-            }
+    except Exception as e:
+        APILogger.log_error("用户登出", e, IP=request.client.host)
+        return ErrorResponse.create(
+            code=ResponseCode.SERVER_ERROR,
+            message=str(e)
         )
 
 @router.post("/reset-password")

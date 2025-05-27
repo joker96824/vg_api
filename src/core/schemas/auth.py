@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
+from .response import ResponseCode, SuccessResponse, ErrorResponse
 
 class SendSMSRequest(BaseModel):
     mobile: str = Field(pattern=r'^1[3-9]\d{9}$')
@@ -80,4 +81,22 @@ class SendResetPasswordEmailRequest(BaseModel):
 class ResetPasswordWithEmailRequest(BaseModel):
     email: str = Field(..., description="邮箱地址")
     email_code: str = Field(..., description="邮箱验证码")
-    new_password: str = Field(..., min_length=6, max_length=20, description="新密码") 
+    new_password: str = Field(..., min_length=6, max_length=20, description="新密码")
+
+# 认证相关响应数据结构
+class AuthUser(BaseModel):
+    id: str
+    mobile: Optional[str] = None
+    email: Optional[str] = None
+    nickname: str
+    level: Optional[int] = None
+    avatar: Optional[str] = None
+
+class AuthToken(BaseModel):
+    user: AuthUser
+    token: str
+
+# 统一响应类型
+AuthSuccessResponse = SuccessResponse[AuthToken]
+AuthUserSuccessResponse = SuccessResponse[AuthUser]
+AuthSimpleSuccessResponse = SuccessResponse[Dict[str, Any]] 
