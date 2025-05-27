@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     ALLOWED_HEADERS: List[str] = ["*"]
 
     # 日志设置
-    LOG_LEVEL: str = "INFO"
+    LOG_LEVEL: str = "DEBUG"  # 默认设置为DEBUG级别，方便开发调试
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     # 数据库连接URL
