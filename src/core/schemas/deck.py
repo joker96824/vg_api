@@ -1,7 +1,56 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Generic, TypeVar
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
+
+# 定义响应码
+class ResponseCode:
+    SUCCESS = "SUCCESS"
+    CREATE_SUCCESS = "CREATE_SUCCESS"
+    UPDATE_SUCCESS = "UPDATE_SUCCESS"
+    DELETE_SUCCESS = "DELETE_SUCCESS"
+    INVALID_PARAMS = "INVALID_PARAMS"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    FORBIDDEN = "FORBIDDEN"
+    NOT_FOUND = "NOT_FOUND"
+    SERVER_ERROR = "SERVER_ERROR"
+
+# 通用响应模型
+T = TypeVar('T')
+
+class BaseResponse(BaseModel):
+    """基础响应模型"""
+    success: bool = Field(..., description="是否成功")
+    code: str = Field(..., description="响应码")
+    message: str = Field(..., description="响应消息")
+
+class SuccessResponse(BaseResponse, Generic[T]):
+    """成功响应模型"""
+    data: T = Field(..., description="响应数据")
+
+    @classmethod
+    def create(cls, code: str, message: str, data: T) -> "SuccessResponse[T]":
+        return cls(
+            success=True,
+            code=code,
+            message=message,
+            data=data
+        )
+
+class ErrorResponse(BaseResponse):
+    """错误响应模型"""
+    @classmethod
+    def create(cls, code: str, message: str) -> "ErrorResponse":
+        return cls(
+            success=False,
+            code=code,
+            message=message
+        )
+
+# 删除操作响应模型
+class DeleteResponse(BaseModel):
+    """删除操作响应模型"""
+    pass
 
 # DeckCard 相关模型
 class DeckCardBase(BaseModel):
@@ -89,4 +138,17 @@ class DeckInDB(DeckBase):
 class DeckResponse(DeckInDB):
     """卡组响应模型"""
     pass
+
+# 修改 DeckResponse 相关模型
+class DeckListResponse(BaseModel):
+    """卡组列表响应模型"""
+    total: int = Field(..., description="总记录数")
+    items: List[DeckInDB] = Field(..., description="卡组列表")
+
+# 定义具体的响应类型
+DeckSuccessResponse = SuccessResponse[DeckInDB]
+DeckListSuccessResponse = SuccessResponse[DeckListResponse]
+DeckCardSuccessResponse = SuccessResponse[DeckCardInDB]
+DeckCardListSuccessResponse = SuccessResponse[List[DeckCardInDB]]
+DeleteSuccessResponse = SuccessResponse[DeleteResponse]
 
