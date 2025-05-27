@@ -4,14 +4,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from src.core.database import get_session
-from src.core.schemas.card import CardResponse, CardQueryParams
+from src.core.schemas.card import (
+    CardResponse, CardQueryParams, CardSuccessResponse, CardListSuccessResponse, ErrorResponse, ResponseCode, CardListResponse
+)
 from src.core.services.card import CardService
 from src.core.auth import get_current_user
 from src.core.utils.logger import APILogger
 
 router = APIRouter()
 
-@router.get("/cards", response_model=List[CardResponse])
+@router.get("/cards", response_model=CardListSuccessResponse)
 async def get_cards(
     params: CardQueryParams = Depends(),
     session: AsyncSession = Depends(get_session),
@@ -36,12 +38,22 @@ async def get_cards(
             返回记录数=len(cards)
         )
 
-        return cards
+        return CardListSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取卡牌列表成功",
+            data=CardListResponse(total=total, items=cards)
+        )
     except Exception as e:
         APILogger.log_error("获取卡牌列表", e, 用户ID=current_user["id"])
-        raise HTTPException(status_code=500, detail=f"获取卡牌列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"获取卡牌列表失败: {str(e)}"
+            ).dict()
+        )
 
-@router.get("/cards/{card_id}", response_model=List[CardResponse])
+@router.get("/cards/{card_id}", response_model=CardListSuccessResponse)
 async def get_card_by_id(
     card_id: str,
     session: AsyncSession = Depends(get_session)
@@ -64,7 +76,13 @@ async def get_card_by_id(
                 "无效的卡牌ID格式",
                 卡牌ID=card_id
             )
-            raise HTTPException(status_code=400, detail="Invalid card ID format")
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.INVALID_PARAMS,
+                    message="无效的卡牌ID格式"
+                ).dict()
+            )
 
         card_service = CardService(session)
         cards = await card_service.get_cards_by_ids(card_ids)
@@ -75,7 +93,13 @@ async def get_card_by_id(
                 "未找到卡牌",
                 卡牌ID=card_id
             )
-            raise HTTPException(status_code=404, detail="Cards not found")
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.NOT_FOUND,
+                    message="卡牌不存在"
+                ).dict()
+            )
 
         APILogger.log_response(
             "根据ID查询卡牌",
@@ -83,12 +107,22 @@ async def get_card_by_id(
             卡牌ID=card_id
         )
 
-        return cards
+        return CardListSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取卡牌成功",
+            data=CardListResponse(total=len(cards), items=cards)
+        )
     except Exception as e:
         APILogger.log_error("根据ID查询卡牌", e, 卡牌ID=card_id)
-        raise HTTPException(status_code=500, detail=f"查询卡牌失败: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"查询卡牌失败: {str(e)}"
+            ).dict()
+        )
 
-@router.get("/cards/code/{card_code}", response_model=CardResponse)
+@router.get("/cards/code/{card_code}", response_model=CardSuccessResponse)
 async def get_card_by_code(
     card_code: str,
     session: AsyncSession = Depends(get_session),
@@ -113,14 +147,30 @@ async def get_card_by_code(
                 "未找到卡牌",
                 卡牌编号=card_code
             )
-            raise HTTPException(status_code=404, detail="Card not found")
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.NOT_FOUND,
+                    message="卡牌不存在"
+                ).dict()
+            )
 
         APILogger.log_response(
             "根据编号查询卡牌",
             **APILogger.format_card_info(card)
         )
 
-        return card
+        return CardSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取卡牌成功",
+            data=card
+        )
     except Exception as e:
         APILogger.log_error("根据编号查询卡牌", e, 卡牌编号=card_code)
-        raise HTTPException(status_code=500, detail=f"查询卡牌失败: {str(e)}") 
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"查询卡牌失败: {str(e)}"
+            ).dict()
+        ) 
