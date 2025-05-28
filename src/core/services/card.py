@@ -119,22 +119,36 @@ class CardService:
 
         return card
 
-    async def get_cards_by_ids(self, card_ids: List[UUID]) -> List[Card]:
+    async def get_cards_by_ids(self, card_ids: List[str]) -> List[Card]:
         """
-        根据多个ID查询卡牌
+        根据ID列表获取卡牌信息
         """
-        logger.debug(f"查询卡牌ID列表: {card_ids}")
-
-        query = select(Card).options(
-            selectinload(Card.rarity_infos),
-            selectinload(Card.ability_infos)
-        ).where(Card.id.in_(card_ids))
-        result = await self.session.execute(query)
-        cards = result.scalars().all()
-
-        logger.debug(f"查询结果: {cards}")
-
-        return cards
+        try:
+            # 将字符串ID转换为UUID
+            uuid_ids = [UUID(id_str) for id_str in card_ids]
+            
+            # 查询卡牌，预加载关联数据
+            query = select(Card).options(
+                selectinload(Card.rarity_infos),
+                selectinload(Card.ability_infos)
+            ).where(
+                and_(
+                    Card.id.in_(uuid_ids),
+                    Card.is_deleted == False
+                )
+            )
+            
+            result = await self.session.execute(query)
+            cards = result.scalars().all()
+            
+            # 按照请求的ID顺序排序
+            card_dict = {str(card.id): card for card in cards}
+            return [card_dict[str(id)] for id in uuid_ids if str(id) in card_dict]
+            
+        except ValueError as e:
+            raise ValueError(f"无效的卡牌ID格式: {str(e)}")
+        except Exception as e:
+            raise Exception(f"获取卡牌失败: {str(e)}")
 
     async def get_card_by_code(self, card_code: str) -> Optional[Card]:
         """

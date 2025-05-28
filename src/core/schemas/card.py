@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
 from fastapi import Query
+from .response import ResponseCode, SuccessResponse, ErrorResponse
 
 class CardRarityBase(BaseModel):
     """卡牌稀有度基础模型"""
@@ -102,6 +103,10 @@ class CardListResponse(BaseModel):
     total: int = Field(..., description="总记录数")
     items: List[CardResponse] = Field(..., description="卡牌列表")
 
+# 具体响应类型
+CardSuccessResponse = SuccessResponse[CardResponse]
+CardListSuccessResponse = SuccessResponse[CardListResponse]
+
 class CardQueryParams(BaseModel):
     """卡牌查询参数"""
     keyword: Optional[str] = Field(None, description="关键词搜索（搜索范围：卡牌编号、中文名称、日文名称、国家、势力、技能、卡牌描述、备注）")
@@ -139,4 +144,8 @@ class CardQueryParams(BaseModel):
                 "page": 1,
                 "page_size": 20
             }
-        } 
+        }
+
+class CardIdsRequest(BaseModel):
+    """批量获取卡牌请求模型"""
+    card_ids: List[str] = Field(..., description="卡牌ID列表", min_items=1, max_items=100) 

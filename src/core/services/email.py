@@ -51,7 +51,7 @@ class EmailService:
         # 检查IP限制
         ip_key = f"EMAIL_IP:{ip}"
         ip_count = int(self.redis.get(ip_key) or 0)
-        if ip_count >= 20:  # 同一IP每天最多发送20次
+        if ip_count >= 50:  # 同一IP每天最多发送50次
             return {
                 "success": False,
                 "code": "IP_LIMIT",

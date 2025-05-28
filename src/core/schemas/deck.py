@@ -2,6 +2,12 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
+from .response import ResponseCode, SuccessResponse, ErrorResponse
+
+# 删除操作响应模型
+class DeleteResponse(BaseModel):
+    """删除操作响应模型"""
+    pass
 
 # DeckCard 相关模型
 class DeckCardBase(BaseModel):
@@ -58,6 +64,7 @@ class DeckBase(BaseModel):
     """卡组基础模型"""
     deck_name: str = Field(..., description="卡组名称")
     deck_description: Optional[str] = Field(None, description="卡组描述")
+    is_valid: bool = Field(False, description="卡组合规")
     is_public: bool = Field(False, description="是否公开")
     is_official: bool = Field(False, description="是否官方卡组")
     preset: int = Field(-1, description="预设卡组")
@@ -89,4 +96,29 @@ class DeckInDB(DeckBase):
 class DeckResponse(DeckInDB):
     """卡组响应模型"""
     pass
+
+# 修改 DeckResponse 相关模型
+class DeckListResponse(BaseModel):
+    """卡组列表响应模型"""
+    total: int = Field(..., description="总记录数")
+    items: List[DeckInDB] = Field(..., description="卡组列表")
+
+# 定义具体的响应类型
+DeckSuccessResponse = SuccessResponse[DeckInDB]
+DeckListSuccessResponse = SuccessResponse[DeckListResponse]
+DeckCardSuccessResponse = SuccessResponse[DeckCardInDB]
+DeckCardListSuccessResponse = SuccessResponse[List[DeckCardInDB]]
+DeleteSuccessResponse = SuccessResponse[DeleteResponse]
+
+class DeckValidityResponse(BaseModel):
+    """卡组合规性检查响应模型"""
+    is_valid: bool = Field(..., description="是否合规")
+    problems: List[str] = Field(default_factory=list, description="问题列表")
+
+class DeckValiditySuccessResponse(BaseModel):
+    """卡组合规性检查成功响应模型"""
+    success: bool = Field(..., description="是否成功")
+    code: str = Field(..., description="响应码")
+    message: str = Field(..., description="响应消息")
+    data: DeckValidityResponse = Field(..., description="响应数据")
 

@@ -1,18 +1,22 @@
 from typing import List
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 from uuid import UUID
 
 from src.core.database import get_session
-from src.core.schemas.card import CardResponse, CardQueryParams
+from src.core.schemas.card import (
+    CardResponse, CardQueryParams,
+    CardSuccessResponse, CardListSuccessResponse,
+    ErrorResponse, ResponseCode,
+    CardListResponse, CardIdsRequest
+)
 from src.core.services.card import CardService
 from src.core.auth import get_current_user
+from src.core.utils.logger import APILogger
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.get("/cards", response_model=List[CardResponse])
+@router.get("/cards", response_model=CardListSuccessResponse)
 async def get_cards(
     params: CardQueryParams = Depends(),
     session: AsyncSession = Depends(get_session),
@@ -21,43 +25,87 @@ async def get_cards(
     """
     查询卡牌列表
     """
-    logger.debug(f"收到查询请求: {params}")
+    try:
+        APILogger.log_request(
+            "获取卡牌列表",
+            用户ID=current_user["id"],
+            查询参数=params.dict()
+        )
 
-    card_service = CardService(session)
-    cards, total = await card_service.get_cards(params)
+        card_service = CardService(session)
+        cards, total = await card_service.get_cards(params)
 
-    logger.debug(f"查询结果: {cards}")
+        APILogger.log_response(
+            "获取卡牌列表",
+            总记录数=total,
+            返回记录数=len(cards)
+        )
 
-    return cards
+        return CardListSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取卡牌列表成功",
+            data=CardListResponse(total=total, items=cards)
+        )
+    except Exception as e:
+        APILogger.log_error("获取卡牌列表", e, 用户ID=current_user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"获取卡牌列表失败: {str(e)}"
+            ).dict()
+        )
 
-@router.get("/cards/{card_id}", response_model=List[CardResponse])
-async def get_card_by_id(
-    card_id: str,
+@router.post("/cards/batch", response_model=CardListSuccessResponse)
+async def get_cards_by_ids(
+    data: CardIdsRequest,
     session: AsyncSession = Depends(get_session)
 ):
     """
-    根据ID查询卡牌，支持多个ID（用逗号分隔）
+    批量获取卡牌信息
     """
-    logger.debug(f"收到ID查询请求: {card_id}")
-
-    # 将逗号分隔的字符串转换为UUID列表
     try:
-        card_ids = [UUID(id.strip()) for id in card_id.split(",")]
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid card ID format")
+        APILogger.log_request(
+            "批量获取卡牌",
+            卡牌ID列表=data.card_ids
+        )
 
-    card_service = CardService(session)
-    cards = await card_service.get_cards_by_ids(card_ids)
-    
-    if not cards:
-        logger.warning(f"未找到卡牌: {card_id}")
-        raise HTTPException(status_code=404, detail="Cards not found")
+        card_service = CardService(session)
+        cards = await card_service.get_cards_by_ids(data.card_ids)
+        
+        if not cards:
+            APILogger.log_warning(
+                "批量获取卡牌",
+                "未找到卡牌",
+                卡牌ID列表=data.card_ids
+            )
+            return CardListSuccessResponse.create(
+                code=ResponseCode.SUCCESS,
+                message="未找到卡牌",
+                data=CardListResponse(total=0, items=[])
+            )
 
-    logger.debug(f"查询结果: {cards}")
+        APILogger.log_response(
+            "批量获取卡牌",
+            返回记录数=len(cards)
+        )
 
-    return cards
+        return CardListSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取卡牌成功",
+            data=CardListResponse(total=len(cards), items=cards)
+        )
+    except Exception as e:
+        APILogger.log_error("批量获取卡牌", e, 卡牌ID列表=data.card_ids)
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"获取卡牌失败: {str(e)}"
+            ).dict()
+        )
 
-@router.get("/cards/code/{card_code}", response_model=CardResponse)
+@router.get("/cards/code/{card_code}", response_model=CardSuccessResponse)
 async def get_card_by_code(
     card_code: str,
     session: AsyncSession = Depends(get_session),
@@ -66,15 +114,46 @@ async def get_card_by_code(
     """
     根据卡牌编号查询卡牌
     """
-    logger.debug(f"收到编号查询请求: {card_code}")
+    try:
+        APILogger.log_request(
+            "根据编号查询卡牌",
+            用户ID=current_user["id"],
+            卡牌编号=card_code
+        )
 
-    card_service = CardService(session)
-    card = await card_service.get_card_by_code(card_code)
-    
-    if not card:
-        logger.warning(f"未找到卡牌: {card_code}")
-        raise HTTPException(status_code=404, detail="Card not found")
+        card_service = CardService(session)
+        card = await card_service.get_card_by_code(card_code)
+        
+        if not card:
+            APILogger.log_warning(
+                "根据编号查询卡牌",
+                "未找到卡牌",
+                卡牌编号=card_code
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.NOT_FOUND,
+                    message="卡牌不存在"
+                ).dict()
+            )
 
-    logger.debug(f"查询结果: {card}")
+        APILogger.log_response(
+            "根据编号查询卡牌",
+            **APILogger.format_card_info(card)
+        )
 
-    return card 
+        return CardSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取卡牌成功",
+            data=card
+        )
+    except Exception as e:
+        APILogger.log_error("根据编号查询卡牌", e, 卡牌编号=card_code)
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"查询卡牌失败: {str(e)}"
+            ).dict()
+        ) 
