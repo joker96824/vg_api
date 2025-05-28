@@ -10,7 +10,8 @@ from src.core.schemas.deck import (
     DeckSuccessResponse, DeckListSuccessResponse,
     DeckCardSuccessResponse, DeckCardListSuccessResponse,
     DeleteSuccessResponse, DeleteResponse,
-    ResponseCode, ErrorResponse
+    ResponseCode, ErrorResponse,
+    DeckValidityResponse, DeckValiditySuccessResponse
 )
 from src.core.services.deck import DeckService
 from src.core.auth import get_current_user
@@ -531,4 +532,47 @@ async def copy_deck(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"复制卡组失败: {str(e)}"
             ).dict()
+        )
+
+
+@router.get("/decks/{deck_id}/validity", response_model=DeckValiditySuccessResponse)
+async def check_deck_validity(
+    deck_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    检查卡组合规性
+    """
+    try:
+        APILogger.log_request(
+            "检查卡组合规性",
+            用户ID=current_user["id"],
+            卡组ID=deck_id
+        )
+        deck_service = DeckService(session)
+        is_valid, problems = await deck_service.check_deck_validity(deck_id)
+        APILogger.log_response(
+            "检查卡组合规性",
+            是否合规=is_valid,
+            问题列表=problems
+        )
+        return DeckValiditySuccessResponse(
+            success=True,
+            code=ResponseCode.SUCCESS if is_valid else ResponseCode.VALIDATION_ERROR,
+            message="卡组合规" if is_valid else "卡组存在以下问题",
+            data=DeckValidityResponse(
+                is_valid=is_valid,
+                problems=problems
+            )
+        )
+    except Exception as e:
+        APILogger.log_error("检查卡组合规性", e, 用户ID=current_user["id"], 卡组ID=deck_id)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "code": ResponseCode.SERVER_ERROR,
+                "message": f"检查卡组合规性失败: {str(e)}"
+            }
         )

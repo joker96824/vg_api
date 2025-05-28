@@ -110,3 +110,15 @@ DeckCardSuccessResponse = SuccessResponse[DeckCardInDB]
 DeckCardListSuccessResponse = SuccessResponse[List[DeckCardInDB]]
 DeleteSuccessResponse = SuccessResponse[DeleteResponse]
 
+class DeckValidityResponse(BaseModel):
+    """卡组合规性检查响应模型"""
+    is_valid: bool = Field(..., description="是否合规")
+    problems: List[str] = Field(default_factory=list, description="问题列表")
+
+class DeckValiditySuccessResponse(BaseModel):
+    """卡组合规性检查成功响应模型"""
+    success: bool = Field(..., description="是否成功")
+    code: str = Field(..., description="响应码")
+    message: str = Field(..., description="响应消息")
+    data: DeckValidityResponse = Field(..., description="响应数据")
+
