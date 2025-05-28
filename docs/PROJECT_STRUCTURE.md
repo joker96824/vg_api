@@ -353,11 +353,49 @@ logs/                           # 日志目录
 8. 所有测试文件必须放在`tests/`目录下
 9. 环境变量变更时，禁止直接修改代码中的配置值，必须提出要求由管理员添加到`.env`文件中
 
-## API响应格式规范
+## API响应规范
 
-### 响应结构
+### 1. 响应结构
 
-1. 成功响应格式
+#### 1.1 基础响应模型
+```python
+class BaseResponse(BaseModel):
+    success: bool
+    code: str
+    message: str
+    data: Optional[Any] = None
+```
+
+#### 1.2 认证相关响应模型
+```python
+# 简单成功响应（无数据）
+class AuthSimpleSuccessResponse(BaseResponse):
+    data: Dict = {}
+
+# 带用户信息的成功响应
+class AuthSuccessResponse(BaseResponse):
+    data: AuthToken
+
+# 带用户信息的响应数据
+class AuthToken(BaseModel):
+    user: AuthUser
+    token: str
+
+# 用户信息模型
+class AuthUser(BaseModel):
+    id: int
+    mobile: Optional[str] = None
+    email: Optional[str] = None
+    nickname: str
+    avatar: Optional[str] = None
+    is_admin: bool = False
+    created_at: datetime
+    updated_at: datetime
+```
+
+### 2. 响应格式
+
+#### 2.1 成功响应格式
 ```json
 {
   "success": true,
@@ -367,7 +405,7 @@ logs/                           # 日志目录
 }
 ```
 
-2. 错误响应格式
+#### 2.2 错误响应格式
 ```json
 {
   "success": false,
@@ -376,8 +414,9 @@ logs/                           # 日志目录
 }
 ```
 
-### 状态码规范
+### 3. 状态码规范
 
+#### 3.1 HTTP状态码
 | 状态码 | 说明 | 使用场景 |
 |--------|------|----------|
 | 400 | 请求参数错误 | 参数验证失败、格式错误等 |
@@ -386,58 +425,256 @@ logs/                           # 日志目录
 | 404 | 资源不存在 | 请求的资源不存在 |
 | 500 | 服务器错误 | 服务器内部错误、异常等 |
 
-### 响应码规范
+#### 3.2 响应码枚举
+```python
+class ResponseCode(str, Enum):
+    # 成功响应码
+    SUCCESS = "SUCCESS"                    # 通用成功
+    CREATE_SUCCESS = "CREATE_SUCCESS"      # 创建成功
+    UPDATE_SUCCESS = "UPDATE_SUCCESS"      # 更新成功
+    DELETE_SUCCESS = "DELETE_SUCCESS"      # 删除成功
+    LOGIN_SUCCESS = "LOGIN_SUCCESS"        # 登录成功
+    REGISTER_SUCCESS = "REGISTER_SUCCESS"  # 注册成功
 
-1. 成功响应码
-   - `SUCCESS`: 通用成功
-   - `CREATE_SUCCESS`: 创建成功
-   - `UPDATE_SUCCESS`: 更新成功
-   - `DELETE_SUCCESS`: 删除成功
-   - `LOGIN_SUCCESS`: 登录成功
-   - `REGISTER_SUCCESS`: 注册成功
-
-2. 错误响应码
-   - `INVALID_PARAMS`: 无效参数
-   - `UNAUTHORIZED`: 未认证
-   - `FORBIDDEN`: 无权限
-   - `NOT_FOUND`: 资源不存在
-   - `SERVER_ERROR`: 服务器错误
-   - `LOGIN_ERROR`: 登录失败
-   - `REGISTER_ERROR`: 注册失败
-
-### 使用示例
-
-1. 成功响应示例
-```json
-{
-  "success": true,
-  "code": "LOGIN_SUCCESS",
-  "message": "登录成功",
-  "data": {
-    "user": {
-      "id": "123",
-      "username": "test"
-    },
-    "token": "xxx"
-  }
-}
+    # 错误响应码
+    INVALID_PARAMS = "INVALID_PARAMS"      # 参数错误
+    UNAUTHORIZED = "UNAUTHORIZED"          # 未授权
+    PERMISSION_DENIED = "PERMISSION_DENIED" # 权限不足
+    RESOURCE_NOT_FOUND = "NOT_FOUND"      # 资源不存在
+    SERVER_ERROR = "SERVER_ERROR"         # 服务器错误
+    LOGIN_ERROR = "LOGIN_ERROR"           # 登录失败
+    REGISTER_ERROR = "REGISTER_ERROR"     # 注册失败
 ```
 
-2. 错误响应示例
-```json
-{
-  "success": false,
-  "code": "INVALID_PARAMS",
-  "message": "用户名不能为空"
-}
+### 4. 响应使用规范
+
+#### 4.1 成功响应
+- 简单操作成功：使用 `AuthSimpleSuccessResponse.create()`
+- 带用户信息的操作：使用 `AuthSuccessResponse.create()`
+- 必须包含 `code`、`message` 和 `data` 字段
+
+#### 4.2 错误响应
+- 统一使用 `ErrorResponse.create()`
+- 必须包含 `code` 和 `message` 字段
+- 错误信息必须明确且有意义
+
+#### 4.3 响应示例
+```python
+# 成功响应示例
+return AuthSimpleSuccessResponse.create(
+    code=ResponseCode.SUCCESS,
+    message="操作成功",
+    data={}
+)
+
+# 带用户信息的成功响应示例
+return AuthSuccessResponse.create(
+    code=ResponseCode.SUCCESS,
+    message="登录成功",
+    data=AuthToken(
+        user=AuthUser(**user_data),
+        token=token
+    )
+)
+
+# 错误响应示例
+return ErrorResponse.create(
+    code=ResponseCode.INVALID_PARAMS,
+    message="参数错误"
+)
 ```
 
-### 注意事项
+### 5. 日志记录规范
 
-1. 所有API响应必须遵循统一的格式规范
-2. 错误响应必须包含明确的错误码和描述
-3. 敏感信息（如密码、token）在响应中必须脱敏
-4. 大量数据需要分页处理
-5. 响应数据需要进行适当的类型转换
-6. 错误信息应该对用户友好
-7. 避免暴露敏感的错误堆栈信息 
+#### 5.1 请求日志
+```python
+APILogger.log_request(
+    "操作名称",
+    用户ID=user_id,  # 如果有
+    其他参数=参数值,
+    IP=request.client.host
+)
+```
+
+#### 5.2 响应日志
+```python
+APILogger.log_response(
+    "操作名称",
+    用户ID=user_id,  # 如果有
+    操作结果="成功/失败"
+)
+```
+
+#### 5.3 错误日志
+```python
+APILogger.log_error(
+    "操作名称",
+    error,
+    IP=request.client.host
+)
+```
+
+### 6. 注意事项
+
+1. 接口规范
+   - 所有接口必须使用 `response_model` 装饰器指定响应模型
+   - 响应数据必须符合模型定义的结构
+   - 错误处理必须使用统一的错误响应格式
+
+2. 数据安全
+   - 敏感信息（如密码、token等）在响应中必须脱敏
+   - 敏感信息不得在日志中记录
+   - 避免暴露敏感的错误堆栈信息
+
+3. 性能考虑
+   - 大量数据需要分页处理
+   - 响应数据需要进行适当的类型转换
+   - 避免返回过大的响应体
+
+4. 用户体验
+   - 响应消息必须使用中文，且表述清晰准确
+   - 错误信息应该对用户友好
+   - 提供有意义的错误提示
+
+5. 日志记录
+   - 必须记录完整的操作日志
+   - 关键操作必须记录详细日志
+   - 错误日志必须包含完整的上下文信息
+
+## 响应规范化要求
+
+### 1. 响应模型结构
+
+所有API响应必须使用统一的响应模型，主要分为以下几类：
+
+#### 1.1 基础响应模型
+```python
+class BaseResponse(BaseModel):
+    success: bool
+    code: str
+    message: str
+    data: Optional[Any] = None
+```
+
+#### 1.2 认证相关响应模型
+```python
+# 简单成功响应（无数据）
+class AuthSimpleSuccessResponse(BaseResponse):
+    data: Dict = {}
+
+# 带用户信息的成功响应
+class AuthSuccessResponse(BaseResponse):
+    data: AuthToken
+
+# 带用户信息的响应数据
+class AuthToken(BaseModel):
+    user: AuthUser
+    token: str
+
+# 用户信息模型
+class AuthUser(BaseModel):
+    id: int
+    mobile: Optional[str] = None
+    email: Optional[str] = None
+    nickname: str
+    avatar: Optional[str] = None
+    is_admin: bool = False
+    created_at: datetime
+    updated_at: datetime
+```
+
+### 2. 响应状态码规范
+
+使用统一的响应状态码枚举：
+
+```python
+class ResponseCode(str, Enum):
+    SUCCESS = "SUCCESS"                    # 操作成功
+    CREATE_SUCCESS = "CREATE_SUCCESS"      # 创建成功
+    UPDATE_SUCCESS = "UPDATE_SUCCESS"      # 更新成功
+    DELETE_SUCCESS = "DELETE_SUCCESS"      # 删除成功
+    INVALID_PARAMS = "INVALID_PARAMS"      # 参数错误
+    UNAUTHORIZED = "UNAUTHORIZED"          # 未授权
+    PERMISSION_DENIED = "PERMISSION_DENIED" # 权限不足
+    RESOURCE_NOT_FOUND = "NOT_FOUND"      # 资源不存在
+    SERVER_ERROR = "SERVER_ERROR"         # 服务器错误
+```
+
+### 3. 响应使用规范
+
+#### 3.1 成功响应
+- 简单操作成功：使用 `AuthSimpleSuccessResponse.create()`
+- 带用户信息的操作：使用 `AuthSuccessResponse.create()`
+- 必须包含 `code`、`message` 和 `data` 字段
+
+#### 3.2 错误响应
+- 统一使用 `ErrorResponse.create()`
+- 必须包含 `code` 和 `message` 字段
+- 错误信息必须明确且有意义
+
+#### 3.3 响应示例
+```python
+# 成功响应示例
+return AuthSimpleSuccessResponse.create(
+    code=ResponseCode.SUCCESS,
+    message="操作成功",
+    data={}
+)
+
+# 带用户信息的成功响应示例
+return AuthSuccessResponse.create(
+    code=ResponseCode.SUCCESS,
+    message="登录成功",
+    data=AuthToken(
+        user=AuthUser(**user_data),
+        token=token
+    )
+)
+
+# 错误响应示例
+return ErrorResponse.create(
+    code=ResponseCode.INVALID_PARAMS,
+    message="参数错误"
+)
+```
+
+### 4. 日志记录规范
+
+所有响应必须记录相应的日志：
+
+#### 4.1 请求日志
+```python
+APILogger.log_request(
+    "操作名称",
+    用户ID=user_id,  # 如果有
+    其他参数=参数值,
+    IP=request.client.host
+)
+```
+
+#### 4.2 响应日志
+```python
+APILogger.log_response(
+    "操作名称",
+    用户ID=user_id,  # 如果有
+    操作结果="成功/失败"
+)
+```
+
+#### 4.3 错误日志
+```python
+APILogger.log_error(
+    "操作名称",
+    error,
+    IP=request.client.host
+)
+```
+
+### 5. 注意事项
+
+1. 所有接口必须使用 `response_model` 装饰器指定响应模型
+2. 响应数据必须符合模型定义的结构
+3. 错误处理必须使用统一的错误响应格式
+4. 必须记录完整的操作日志
+5. 敏感信息（如密码、token等）不得在日志中记录
+6. 响应消息必须使用中文，且表述清晰准确 

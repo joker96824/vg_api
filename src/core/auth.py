@@ -57,7 +57,7 @@ async def get_current_user(
 
 def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """验证管理员权限"""
-    if current_user.get("level", 1) < 2:  # 假设level >= 2为管理员
+    if current_user.get("level", 1) < 5:  # 假设level >= 2为管理员
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="需要管理员权限"
