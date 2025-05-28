@@ -18,6 +18,7 @@ class Deck(Base):
     user_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
     deck_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
     deck_description: Mapped[Optional[str]] = mapped_column(Text)
+    is_valid: Mapped[bool] = mapped_column(Boolean, default=False)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
     is_official: Mapped[bool] = mapped_column(Boolean, default=False)
     preset:  Mapped[int] = mapped_column(Integer, default=-1)

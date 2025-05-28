@@ -5,7 +5,10 @@ from uuid import UUID
 
 from src.core.database import get_session
 from src.core.schemas.card import (
-    CardResponse, CardQueryParams, CardSuccessResponse, CardListSuccessResponse, ErrorResponse, ResponseCode, CardListResponse
+    CardResponse, CardQueryParams,
+    CardSuccessResponse, CardListSuccessResponse,
+    ErrorResponse, ResponseCode,
+    CardListResponse, CardIdsRequest
 )
 from src.core.services.card import CardService
 from src.core.auth import get_current_user
@@ -53,58 +56,38 @@ async def get_cards(
             ).dict()
         )
 
-@router.get("/cards/{card_id}", response_model=CardListSuccessResponse)
-async def get_card_by_id(
-    card_id: str,
+@router.post("/cards/batch", response_model=CardListSuccessResponse)
+async def get_cards_by_ids(
+    data: CardIdsRequest,
     session: AsyncSession = Depends(get_session)
 ):
     """
-    根据ID查询卡牌，支持多个ID（用逗号分隔）
+    批量获取卡牌信息
     """
     try:
         APILogger.log_request(
-            "根据ID查询卡牌",
-            卡牌ID=card_id
+            "批量获取卡牌",
+            卡牌ID列表=data.card_ids
         )
 
-        # 将逗号分隔的字符串转换为UUID列表
-        try:
-            card_ids = [UUID(id.strip()) for id in card_id.split(",")]
-        except ValueError:
-            APILogger.log_warning(
-                "根据ID查询卡牌",
-                "无效的卡牌ID格式",
-                卡牌ID=card_id
-            )
-            raise HTTPException(
-                status_code=400,
-                detail=ErrorResponse.create(
-                    code=ResponseCode.INVALID_PARAMS,
-                    message="无效的卡牌ID格式"
-                ).dict()
-            )
-
         card_service = CardService(session)
-        cards = await card_service.get_cards_by_ids(card_ids)
+        cards = await card_service.get_cards_by_ids(data.card_ids)
         
         if not cards:
             APILogger.log_warning(
-                "根据ID查询卡牌",
+                "批量获取卡牌",
                 "未找到卡牌",
-                卡牌ID=card_id
+                卡牌ID列表=data.card_ids
             )
-            raise HTTPException(
-                status_code=404,
-                detail=ErrorResponse.create(
-                    code=ResponseCode.NOT_FOUND,
-                    message="卡牌不存在"
-                ).dict()
+            return CardListSuccessResponse.create(
+                code=ResponseCode.SUCCESS,
+                message="未找到卡牌",
+                data=CardListResponse(total=0, items=[])
             )
 
         APILogger.log_response(
-            "根据ID查询卡牌",
-            找到卡牌数=len(cards),
-            卡牌ID=card_id
+            "批量获取卡牌",
+            返回记录数=len(cards)
         )
 
         return CardListSuccessResponse.create(
@@ -113,12 +96,12 @@ async def get_card_by_id(
             data=CardListResponse(total=len(cards), items=cards)
         )
     except Exception as e:
-        APILogger.log_error("根据ID查询卡牌", e, 卡牌ID=card_id)
+        APILogger.log_error("批量获取卡牌", e, 卡牌ID列表=data.card_ids)
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse.create(
                 code=ResponseCode.SERVER_ERROR,
-                message=f"查询卡牌失败: {str(e)}"
+                message=f"获取卡牌失败: {str(e)}"
             ).dict()
         )
 

@@ -64,6 +64,7 @@ class DeckBase(BaseModel):
     """卡组基础模型"""
     deck_name: str = Field(..., description="卡组名称")
     deck_description: Optional[str] = Field(None, description="卡组描述")
+    is_valid: bool = Field(False, description="卡组合规")
     is_public: bool = Field(False, description="是否公开")
     is_official: bool = Field(False, description="是否官方卡组")
     preset: int = Field(-1, description="预设卡组")

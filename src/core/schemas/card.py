@@ -144,4 +144,8 @@ class CardQueryParams(BaseModel):
                 "page": 1,
                 "page_size": 20
             }
-        } 
+        }
+
+class CardIdsRequest(BaseModel):
+    """批量获取卡牌请求模型"""
+    card_ids: List[str] = Field(..., description="卡牌ID列表", min_items=1, max_items=100) 
