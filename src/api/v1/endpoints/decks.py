@@ -11,7 +11,8 @@ from src.core.schemas.deck import (
     DeckCardSuccessResponse, DeckCardListSuccessResponse,
     DeleteSuccessResponse, DeleteResponse,
     ResponseCode, ErrorResponse,
-    DeckValidityResponse, DeckValiditySuccessResponse
+    DeckValidityResponse, DeckValiditySuccessResponse,
+    DeckPresetUpdate
 )
 from src.core.services.deck import DeckService
 from src.core.auth import get_current_user
@@ -408,31 +409,28 @@ async def update_deck_info(
         )
 
 
-@router.patch("/decks/{deck_id}/preset", response_model=DeckSuccessResponse, summary="更新卡组预设值")
+@router.put("/decks/{deck_id}/preset", response_model=DeckSuccessResponse)
 async def update_deck_preset(
     deck_id: UUID,
-    preset: int = Query(..., description="新的预设值"),
+    preset_update: DeckPresetUpdate,
     session: AsyncSession = Depends(get_session),
     current_user: dict = Depends(get_current_user)
 ):
-    """更新卡组的预设值"""
+    """
+    更新卡组预设值
+    """
     try:
         APILogger.log_request(
             "更新卡组预设值",
             用户ID=current_user["id"],
-            卡组ID=str(deck_id),
-            预设值=preset
+            卡组ID=deck_id,
+            预设值=preset_update.preset
         )
         
         deck_service = DeckService(session)
-        # 先获取卡组信息
-        existing_deck = await deck_service.get_deck(deck_id)
-        if not existing_deck:
-            APILogger.log_warning(
-                "更新卡组预设值",
-                "未找到卡组",
-                卡组ID=str(deck_id)
-            )
+        deck = await deck_service.update_deck_preset(deck_id, preset_update.preset, current_user["id"])
+        
+        if not deck:
             raise HTTPException(
                 status_code=404,
                 detail=ErrorResponse.create(
@@ -441,37 +439,42 @@ async def update_deck_preset(
                 ).dict()
             )
             
-        # 验证是否是卡组所有者
-        if str(existing_deck.user_id) != current_user["id"]:
-            APILogger.log_warning(
-                "更新卡组预设值",
-                "无权修改卡组",
-                用户ID=current_user["id"],
-                卡组ID=str(deck_id)
-            )
-            raise HTTPException(
-                status_code=403,
-                detail=ErrorResponse.create(
-                    code=ResponseCode.FORBIDDEN,
-                    message="无权修改此卡组"
-                ).dict()
-            )
-            
-        updated_deck = await deck_service.update_deck_preset(deck_id, preset)
-        
         APILogger.log_response(
             "更新卡组预设值",
-            卡组ID=str(updated_deck.id),
-            预设值=updated_deck.preset
+            用户ID=current_user["id"],
+            卡组ID=deck_id,
+            预设值=preset_update.preset
         )
         
         return DeckSuccessResponse.create(
             code=ResponseCode.SUCCESS,
-            message="卡组预设值更新成功",
-            data=updated_deck
+            message="更新卡组预设值成功",
+            data=deck
+        )
+        
+    except ValueError as e:
+        APILogger.log_error(
+            "更新卡组预设值",
+            e,
+            用户ID=current_user["id"],
+            卡组ID=deck_id,
+            预设值=preset_update.preset
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse.create(
+                code=ResponseCode.VALIDATION_ERROR,
+                message=str(e)
+            ).dict()
         )
     except Exception as e:
-        APILogger.log_error("更新卡组预设值", e, 用户ID=current_user["id"], 卡组ID=str(deck_id))
+        APILogger.log_error(
+            "更新卡组预设值",
+            e,
+            用户ID=current_user["id"],
+            卡组ID=deck_id,
+            预设值=preset_update.preset
+        )
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse.create(
