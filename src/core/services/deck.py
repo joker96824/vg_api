@@ -300,7 +300,7 @@ class DeckService:
 
             total_main_cards = sum(dc.quantity for dc in main_cards)
             if total_main_cards != 50:
-                problems.append(f"主卡组数量必须为40张，当前为{total_main_cards}张")
+                problems.append(f"主卡组数量必须为50张，当前为{total_main_cards}张")
 
             total_ride_cards = sum(dc.quantity for dc in ride_cards)
             if total_ride_cards != 4:
@@ -485,6 +485,7 @@ class DeckService:
             is_valid = len(problems) == 0
             deck.is_valid = is_valid
             deck.update_time = datetime.now()
+            deck.remark = ";".join(problems)
             await self.db.commit()
 
             return is_valid, problems
