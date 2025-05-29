@@ -181,18 +181,80 @@ class DeckService:
             logger.error("="*50)
             raise
 
-    async def update_deck_preset(self, deck_id: UUID, preset: int) -> Optional[Deck]:
+    async def update_deck_preset(self, deck_id: UUID, preset: int, user_id: UUID) -> Optional[Deck]:
         """更新卡组预设值"""
-        db_deck = await self.get_deck(deck_id)
-        if not db_deck:
-            return None
+        try:
+            # 1. 获取卡组信息并检查is_valid
+            db_deck = await self.get_deck(deck_id)
+            if not db_deck:
+                return None
+                
+            if not db_deck.is_valid:
+                raise ValueError("该卡组不符合要求")
+                
+            # 2. 检查用户权限
+            # 将两个ID都转换为字符串进行比较
+            user_id_str = str(user_id)
+            db_user_id_str = str(db_deck.user_id)
             
-        db_deck.preset = preset
-        db_deck.update_time = datetime.now()
-        
-        await self.db.commit()
-        await self.db.refresh(db_deck)
-        return db_deck
+            if user_id_str != db_user_id_str:
+                raise ValueError(f"无权修改此卡组")
+                
+            # 3. 获取原有的preset值
+            old_preset = db_deck.preset
+            
+            # 4. 处理预设值更新逻辑
+            if preset == 0:
+                if old_preset == 1:
+                    # 找到当前preset为0的卡组，将其改为1
+                    result = await self.db.execute(
+                        select(Deck)
+                        .where(
+                            and_(
+                                Deck.user_id == user_id,
+                                Deck.preset == 0,
+                                Deck.is_deleted == False
+                            )
+                        )
+                    )
+                    current_preset_0 = result.scalar_one_or_none()
+                    if current_preset_0:
+                        current_preset_0.preset = 1
+                        current_preset_0.update_time = datetime.now()
+                        
+                elif old_preset == -1:
+                    # 找到所有preset > -1的卡组
+                    result = await self.db.execute(
+                        select(Deck)
+                        .where(
+                            and_(
+                                Deck.user_id == user_id,
+                                Deck.preset > -1,
+                                Deck.is_deleted == False
+                            )
+                        )
+                        .order_by(Deck.update_time)
+                    )
+                    preset_decks = result.scalars().all()
+                    
+                    if preset_decks:
+                        # 将最早的改为-1，其他的改为1
+                        for i, deck in enumerate(preset_decks):
+                            deck.preset = -1 if i == 0 else 1
+                            deck.update_time = datetime.now()
+            
+            # 5. 更新当前卡组的preset值
+            db_deck.preset = preset
+            db_deck.update_time = datetime.now()
+            
+            await self.db.commit()
+            await self.db.refresh(db_deck)
+            return db_deck
+            
+        except ValueError as e:
+            raise e
+        except Exception as e:
+            raise ValueError(f"更新卡组预设值失败: {str(e)}")
 
     async def copy_deck(self, user_id: UUID, deck_id: UUID) -> Optional[Deck]:
         """复制卡组

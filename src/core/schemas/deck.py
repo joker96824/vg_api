@@ -122,3 +122,7 @@ class DeckValiditySuccessResponse(BaseModel):
     message: str = Field(..., description="响应消息")
     data: DeckValidityResponse = Field(..., description="响应数据")
 
+class DeckPresetUpdate(BaseModel):
+    """卡组预设值更新请求"""
+    preset: int = Field(..., description="新的预设值", ge=-1, le=1)
+
