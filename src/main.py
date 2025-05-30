@@ -21,10 +21,11 @@ app = FastAPI(
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 允许所有来源
+    allow_origins=["http://localhost:3000"],  # 明确指定允许的源
     allow_credentials=True,
-    allow_methods=["*"],  # 允许所有方法
-    allow_headers=["*"],  # 允许所有头部
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],  # 明确指定允许的方法
+    allow_headers=["Content-Type", "Authorization", "Accept"],  # 明确指定允许的头部
+    expose_headers=["*"],  # 允许暴露所有头部
 )
 
 # 添加会话中间件
