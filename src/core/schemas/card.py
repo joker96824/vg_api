@@ -32,6 +32,35 @@ class CardRarityInDB(CardRarityBase):
     class Config:
         from_attributes = True
 
+
+class CardAbilityBase(BaseModel):
+    """卡牌能力基础模型"""
+    ability_desc: str = Field(..., description="能力描述")
+    ability: Dict[str, Any] = Field(default_factory=dict, description="能力JSON数据")
+
+
+class CardAbilityCreate(CardAbilityBase):
+    """创建卡牌能力模型"""
+    card_id: UUID = Field(..., description="关联的卡牌ID")
+
+
+class CardAbilityUpdate(CardAbilityBase):
+    """更新卡牌能力模型"""
+    pass
+
+
+class CardAbilityInDB(CardAbilityBase):
+    """数据库中的卡牌能力模型"""
+    id: UUID = Field(..., description="主键ID")
+    card_id: UUID = Field(..., description="关联的卡牌ID")
+    create_user_id: str = Field(..., description="创建用户")
+    update_user_id: str = Field(..., description="更新用户")
+    create_time: datetime = Field(..., description="创建时间")
+    update_time: datetime = Field(..., description="更新时间")
+
+    class Config:
+        from_attributes = True
+
 class CardBase(BaseModel):
     """卡牌基础模型"""
     card_code: str = Field(..., description="卡牌代码")
@@ -76,14 +105,12 @@ class CardInDB(CardBase):
     card_version: int = Field(..., description="版本号")
     remark: str = Field(..., description="备注信息")
     rarity_infos: List[CardRarityInDB] = Field(default_factory=list, description="稀有度信息列表")
+    ability_infos: List[CardAbilityInDB] = Field(default_factory=list, description="效果信息列表")
 
     class Config:
         from_attributes = True
 
-class CardAbilityResponse(BaseModel):
-    id: UUID
-    ability_desc: str
-    ability: Dict[str, Any] = Field(default_factory=dict)
+
 
 class CardRarityResponse(BaseModel):
     id: UUID
@@ -94,17 +121,13 @@ class CardRarityResponse(BaseModel):
     illustrator: Optional[str] = None
     image_url: Optional[str] = None
 
-class CardResponse(CardInDB):
-    """卡牌响应模型"""
-    ability_infos: List[CardAbilityResponse] = []
-
 class CardListResponse(BaseModel):
     """卡牌列表响应模型"""
     total: int = Field(..., description="总记录数")
-    items: List[CardResponse] = Field(..., description="卡牌列表")
+    items: List[CardInDB] = Field(..., description="卡牌列表")
 
 # 具体响应类型
-CardSuccessResponse = SuccessResponse[CardResponse]
+CardSuccessResponse = SuccessResponse[CardInDB]
 CardListSuccessResponse = SuccessResponse[CardListResponse]
 
 class CardQueryParams(BaseModel):
@@ -148,4 +171,9 @@ class CardQueryParams(BaseModel):
 
 class CardIdsRequest(BaseModel):
     """批量获取卡牌请求模型"""
-    card_ids: List[str] = Field(..., description="卡牌ID列表", min_items=1, max_items=100) 
+    card_ids: List[str] = Field(..., description="卡牌ID列表", min_items=1, max_items=100)
+
+class CardAbilityResponse(BaseModel):
+    id: UUID
+    ability_desc: str
+    ability: Dict[str, Any] = Field(default_factory=dict) 
