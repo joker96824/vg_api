@@ -5,7 +5,7 @@ from uuid import UUID
 
 from src.core.database import get_session
 from src.core.schemas.card import (
-    CardResponse, CardQueryParams,
+    CardQueryParams,
     CardSuccessResponse, CardListSuccessResponse,
     ErrorResponse, ResponseCode,
     CardListResponse, CardIdsRequest
