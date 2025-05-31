@@ -21,9 +21,9 @@ from src.core.schemas.auth import (
     ForceResetPasswordByEmailRequest, UpdateEmailRequest,
     SendResetPasswordEmailRequest, ResetPasswordWithEmailRequest,
     AuthSuccessResponse, AuthUserSuccessResponse, AuthSimpleSuccessResponse,
-    AuthUser, AuthToken
+    AuthUser, AuthToken, UpdateUserLevelRequest, UserListResponse
 )
-from src.core.schemas.response import ResponseCode, ErrorResponse
+from src.core.schemas.response import ResponseCode, ErrorResponse, SuccessResponse
 
 router = APIRouter()
 
@@ -990,4 +990,138 @@ async def update_email(
         return ErrorResponse.create(
             code=ResponseCode.INVALID_PARAMS,
             message=str(e)
+        )
+
+@router.get("/users", response_model=SuccessResponse[UserListResponse])
+async def get_all_users(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """获取所有用户信息（需要level=9权限）"""
+    try:
+        # 检查权限
+        if current_user.get("level", 1) != 9:
+            APILogger.log_warning(
+                "获取所有用户",
+                "权限不足",
+                用户ID=current_user["id"],
+                当前等级=current_user.get("level", 1)
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.FORBIDDEN,
+                    message="需要最高管理员权限"
+                ).dict()
+            )
+
+        APILogger.log_request(
+            "获取所有用户",
+            用户ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
+        result = await auth_service.get_all_users()
+        
+        APILogger.log_response(
+            "获取所有用户",
+            用户ID=current_user["id"],
+            总记录数=result["total"]
+        )
+        
+        return SuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取用户列表成功",
+            data=result
+        )
+    except Exception as e:
+        APILogger.log_error("获取所有用户", e, 用户ID=current_user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"获取用户列表失败: {str(e)}"
+            ).dict()
+        )
+
+@router.put("/users/level", response_model=AuthSimpleSuccessResponse)
+async def update_user_level(
+    request: Request,
+    data: UpdateUserLevelRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """更新用户等级（需要level=9权限）"""
+    try:
+        # 检查权限
+        if current_user.get("level", 1) != 9:
+            APILogger.log_warning(
+                "更新用户等级",
+                "权限不足",
+                用户ID=current_user["id"],
+                当前等级=current_user.get("level", 1)
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.FORBIDDEN,
+                    message="需要最高管理员权限"
+                ).dict()
+            )
+
+        APILogger.log_request(
+            "更新用户等级",
+            操作者ID=current_user["id"],
+            目标用户ID=data.user_id,
+            新等级=data.new_level,
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
+        result = await auth_service.update_user_level(
+            target_user_id=data.user_id,
+            new_level=data.new_level,
+            operator_id=current_user["id"],
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "更新用户等级",
+            操作者ID=current_user["id"],
+            目标用户ID=data.user_id,
+            新等级=data.new_level,
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="用户等级修改成功",
+            data=result["data"]
+        )
+    except ValueError as e:
+        APILogger.log_warning(
+            "更新用户等级",
+            "操作失败",
+            操作者ID=current_user["id"],
+            目标用户ID=data.user_id,
+            错误信息=str(e)
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse.create(
+                code=ResponseCode.INVALID_PARAMS,
+                message=str(e)
+            ).dict()
+        )
+    except Exception as e:
+        APILogger.log_error("更新用户等级", e, 操作者ID=current_user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"更新用户等级失败: {str(e)}"
+            ).dict()
         ) 

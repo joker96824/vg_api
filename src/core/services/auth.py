@@ -964,4 +964,71 @@ class AuthService:
         """检查邮箱是否存在"""
         stmt = select(User).where(User.email_hash == self._hash_email(email))
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none() is not None 
+        return result.scalar_one_or_none() is not None
+
+    async def get_all_users(self) -> Dict[str, Any]:
+        """获取所有用户信息"""
+        # 查询所有未删除的用户
+        stmt = select(User).where(User.is_deleted == False)
+        result = await self.session.execute(stmt)
+        users = result.scalars().all()
+        
+        # 转换为响应格式
+        user_list = []
+        for user in users:
+            user_list.append({
+                "id": str(user.id),
+                "mobile": user.mobile,
+                "email": user.email,
+                "nickname": user.nickname,
+                "level": user.level,
+                "avatar": user.avatar
+            })
+            
+        return {
+            "total": len(user_list),
+            "items": user_list
+        }
+
+    async def update_user_level(
+        self,
+        target_user_id: str,
+        new_level: int,
+        operator_id: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """更新用户等级"""
+        # 查找目标用户
+        stmt = select(User).where(User.id == target_user_id, User.is_deleted == False)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise ValueError("目标用户不存在或已被删除")
+            
+        # 更新用户等级
+        old_level = user.level
+        user.level = new_level
+        
+        # 记录修改日志
+        login_log = LoginLog(
+            user_id=user.id,
+            login_type=11,  # 修改用户等级
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"用户等级从 {old_level} 修改为 {new_level}，操作者ID：{operator_id}"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "用户等级修改成功",
+            "data": {
+                "user_id": str(user.id),
+                "old_level": old_level,
+                "new_level": new_level
+            }
+        } 

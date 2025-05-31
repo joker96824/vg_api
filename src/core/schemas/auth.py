@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from .response import ResponseCode, SuccessResponse, ErrorResponse
 
 class SendSMSRequest(BaseModel):
@@ -99,4 +99,14 @@ class AuthToken(BaseModel):
 # 统一响应类型
 AuthSuccessResponse = SuccessResponse[AuthToken]
 AuthUserSuccessResponse = SuccessResponse[AuthUser]
-AuthSimpleSuccessResponse = SuccessResponse[Dict[str, Any]] 
+AuthSimpleSuccessResponse = SuccessResponse[Dict[str, Any]]
+
+class UpdateUserLevelRequest(BaseModel):
+    """更新用户等级请求模型"""
+    user_id: str = Field(..., description="目标用户ID")
+    new_level: int = Field(..., description="新的用户等级", ge=1, le=9)
+
+class UserListResponse(BaseModel):
+    """用户列表响应模型"""
+    total: int = Field(..., description="总记录数")
+    items: List[AuthUser] = Field(..., description="用户列表") 
