@@ -176,4 +176,9 @@ class CardIdsRequest(BaseModel):
 class CardAbilityResponse(BaseModel):
     id: UUID
     ability_desc: str
-    ability: Dict[str, Any] = Field(default_factory=dict) 
+    ability: Dict[str, Any] = Field(default_factory=dict)
+
+class UpdateCardAbilityRequest(BaseModel):
+    """更新卡牌能力请求模型"""
+    id: str = Field(..., description="卡牌能力ID")
+    ability: Dict[str, Any] = Field(..., description="卡牌能力内容") 
