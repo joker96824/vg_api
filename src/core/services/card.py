@@ -1,12 +1,13 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from sqlalchemy import select, and_, or_, func
 from sqlalchemy.sql import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 import logging
 from uuid import UUID
+from datetime import datetime
 
-from src.core.models.card import Card, CardRarity
+from src.core.models.card import Card, CardRarity, CardAbility
 from src.core.schemas.card import CardQueryParams
 
 logger = logging.getLogger(__name__)
@@ -165,4 +166,67 @@ class CardService:
 
         logger.debug(f"查询结果: {card}")
 
-        return card 
+        return card
+
+    async def update_card_ability(
+        self,
+        ability_id: str,
+        ability: Dict[str, Any],
+        operator_id: str,
+        ip: Optional[str] = None,
+        device_fingerprint: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """更新卡牌能力内容"""
+        try:
+            # 查询卡牌能力
+            stmt = select(CardAbility).where(
+                CardAbility.id == ability_id
+            )
+            result = await self.session.execute(stmt)
+            card_ability = result.scalar_one_or_none()
+            
+            if not card_ability:
+                raise ValueError("卡牌能力不存在")
+            
+            # 记录旧数据
+            old_ability = card_ability.ability
+            
+            # 更新能力内容
+            card_ability.ability = ability
+            card_ability.update_user_id = operator_id
+            card_ability.update_time = datetime.now()
+            
+            # 记录操作日志
+            logger.info(
+                "更新卡牌能力",
+                extra={
+                    "操作者ID": operator_id,
+                    "目标ID": ability_id,
+                    "旧数据": old_ability,
+                    "新数据": ability,
+                    "IP": ip,
+                    "设备信息": device_fingerprint
+                }
+            )
+            
+            await self.session.commit()
+            
+            return {
+                "message": "卡牌能力更新成功",
+                "data": {
+                    "id": ability_id,
+                    "old_ability": old_ability,
+                    "new_ability": ability
+                }
+            }
+        except Exception as e:
+            await self.session.rollback()
+            logger.error(
+                "更新卡牌能力失败",
+                exc_info=e,
+                extra={
+                    "操作者ID": operator_id,
+                    "目标ID": ability_id
+                }
+            )
+            raise 

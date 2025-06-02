@@ -24,7 +24,6 @@
 
 ```
 vg_api/
-├── alembic/          # 数据库迁移
 ├── config/           # 配置文件
 ├── docs/            # 文档
 ├── scripts/         # 脚本文件
