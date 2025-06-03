@@ -88,37 +88,78 @@ class DeckService:
 
     async def update_deck(self, deck_id: UUID, deck: DeckUpdate) -> Optional[Deck]:
         """更新卡组及其卡片列表"""
-        db_deck = await self.get_deck(deck_id)
-        if not db_deck:
-            return None
-        # 更新卡组基本信息
-        update_data = deck.model_dump(exclude_unset=True, exclude={'deck_cards'})
-        for field, value in update_data.items():
-            setattr(db_deck, field, value)
+        try:
+            logger.info(f"开始更新卡组 - deck_id: {deck_id}")
+            
+            db_deck = await self.get_deck(deck_id)
+            if not db_deck:
+                logger.warning(f"未找到卡组 - deck_id: {deck_id}")
+                return None
+                
+            logger.info(f"找到卡组，当前信息: {db_deck.deck_name}")
+            
+            # 更新卡组基本信息
+            update_data = deck.model_dump(exclude_unset=True, exclude={'deck_cards'})
+            for field, value in update_data.items():
+                setattr(db_deck, field, value)
+                logger.info(f"更新卡组字段: {field} = {value}")
 
-        # 直接删除原有的卡片
-        for card in db_deck.deck_cards:
-            await self.db.delete(card)
+            # 记录原有卡片数量
+            original_card_count = len(db_deck.deck_cards)
+            logger.info(f"原有卡片数量: {original_card_count}")
 
-        # 添加新的卡片
-        for card_data in deck.deck_cards:
-            db_deck_card = DeckCard(
-                deck_id=deck_id,
-                card_id=card_data.card_id,
-                image=card_data.image,
-                quantity=card_data.quantity,
-                deck_zone=card_data.deck_zone,
-                position=card_data.position,
-                remark=card_data.remark
+            # 显式删除所有现有卡片
+            delete_query = select(DeckCard).where(
+                and_(
+                    DeckCard.deck_id == deck_id,
+                    DeckCard.is_deleted == False
+                )
             )
-            self.db.add(db_deck_card)
-        print("--------------------------------")
-        print(f"添加新的卡片: {deck.deck_cards}")
-        print("--------------------------------")
-        db_deck.update_time = datetime.now()
-        await self.db.commit()
-        await self.db.refresh(db_deck)
-        return db_deck
+            result = await self.db.execute(delete_query)
+            existing_cards = result.scalars().all()
+            
+            for card in existing_cards:
+                logger.info(f"删除卡片: deck_id={card.deck_id}, card_id={card.card_id}, image={card.image}, deck_zone={card.deck_zone}")
+                await self.db.delete(card)
+            
+            # 提交删除操作
+            logger.info("提交删除操作")
+            await self.db.commit()
+            
+            # 添加新的卡片
+            new_cards_count = len(deck.deck_cards)
+            logger.info(f"准备添加新卡片，数量: {new_cards_count}")
+            
+            for card_data in deck.deck_cards:
+                logger.info(f"添加新卡片: card_id={card_data.card_id}, image={card_data.image}, deck_zone={card_data.deck_zone}, quantity={card_data.quantity}")
+                db_deck_card = DeckCard(
+                    deck_id=deck_id,
+                    card_id=card_data.card_id,
+                    image=card_data.image,
+                    quantity=card_data.quantity,
+                    deck_zone=card_data.deck_zone,
+                    position=card_data.position,
+                    remark=card_data.remark
+                )
+                self.db.add(db_deck_card)
+
+            db_deck.update_time = datetime.now()
+            logger.info("提交数据库更改")
+            await self.db.commit()
+            
+            logger.info("刷新卡组信息")
+            await self.db.refresh(db_deck)
+            
+            logger.info(f"卡组更新完成 - deck_id: {deck_id}, 新卡片数量: {len(db_deck.deck_cards)}")
+            return db_deck
+            
+        except Exception as e:
+            logger.error(f"更新卡组时发生错误 - deck_id: {deck_id}")
+            logger.error(f"错误类型: {type(e)}")
+            logger.error(f"错误详情: {str(e)}")
+            # 回滚事务
+            await self.db.rollback()
+            raise ValueError(f"更新卡组失败: {str(e)}")
 
     async def delete_deck(self, deck_id: UUID) -> bool:
         """删除卡组（软删除）"""
