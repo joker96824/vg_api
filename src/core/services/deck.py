@@ -324,7 +324,7 @@ class DeckService:
             deck_description=original_deck.deck_description,
             is_public=original_deck.is_public,
             is_official=original_deck.is_official,
-            preset=original_deck.preset,
+            preset=-1,
             deck_version=original_deck.deck_version,
             remark=original_deck.remark
         )
