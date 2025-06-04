@@ -288,7 +288,7 @@ class DeckService:
                     if preset_decks:
                         # 将最早的改为-1，其他的改为1
                         for i, deck in enumerate(preset_decks):
-                            deck.preset = -1 if i == 0 else 1
+                            deck.preset = -1 if i > 3 else 1
                             deck.update_time = datetime.now()
             
             # 5. 更新当前卡组的preset值
