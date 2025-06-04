@@ -61,9 +61,16 @@ class DeckService:
     async def get_decks(self, params: DeckQueryParams) -> tuple[int, List[Deck]]:
         """获取卡组列表"""
         # 构建查询条件
-        conditions = [
-            Deck.is_deleted == False,
-            Deck.user_id == params.user_id
+        if params.only_preset:
+            conditions = [
+                Deck.is_deleted == False,
+                Deck.user_id == params.user_id,
+                Deck.preset > -1
+            ]
+        else:
+            conditions = [
+                Deck.is_deleted == False,
+                Deck.user_id == params.user_id
         ]
 
         # 计算总数

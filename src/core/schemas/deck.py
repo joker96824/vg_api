@@ -49,6 +49,7 @@ class DeckQueryParams(BaseModel):
     user_id: UUID = Field(..., description="用户ID")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(100, ge=1, le=100, description="每页数量")
+    only_preset: bool = Field(False, description="是否只返回预设卡组")
 
 class DeckCardQueryParams(BaseModel):
     """卡组卡片查询参数模型"""

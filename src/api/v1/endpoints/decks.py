@@ -132,14 +132,16 @@ async def get_deck(
 @router.get("/decks", response_model=DeckListSuccessResponse, summary="获取卡组列表")
 async def get_decks(
     session: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    only_preset: bool = Query(False, description="是否只返回预设卡组")
 ):
     """获取当前用户的卡组列表"""
     try:
         params = DeckQueryParams(
             user_id=current_user["id"],
             page=1,
-            page_size=100
+            page_size=100,
+            only_preset=only_preset
         )
         
         APILogger.log_request(
