@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import JSONResponse, Response
-from typing import Optional
+from typing import Optional, List
 from src.core.services.auth import AuthService
 from src.core.services.captcha import CaptchaService
 from src.core.services.sms import SMSService
@@ -24,6 +24,7 @@ from src.core.schemas.auth import (
     AuthUser, AuthToken, UpdateUserLevelRequest, UserListResponse
 )
 from src.core.schemas.response import ResponseCode, ErrorResponse, SuccessResponse
+from uuid import UUID
 
 router = APIRouter()
 
@@ -1124,4 +1125,15 @@ async def update_user_level(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"更新用户等级失败: {str(e)}"
             ).dict()
-        ) 
+        )
+
+@router.get("/search", response_model=List[AuthUser])
+async def search_users(
+    keyword: str = Query(..., description="搜索关键词"),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """搜索用户"""
+    service = AuthService(db)
+    users = await service.search_users(keyword, current_user["id"])
+    return users 

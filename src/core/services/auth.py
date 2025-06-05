@@ -2,8 +2,8 @@ import hashlib
 from jose import jwt
 import os
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
-from sqlalchemy import select
+from typing import Dict, Any, Optional, List
+from sqlalchemy import select, or_, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.models.user import User
 from src.core.models.session import Session
@@ -16,6 +16,7 @@ from config.settings import settings
 from src.core.services.captcha import CaptchaService
 from fastapi import Request
 from src.core.services.email import EmailService
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -1031,4 +1032,39 @@ class AuthService:
                 "old_level": old_level,
                 "new_level": new_level
             }
-        } 
+        }
+
+    async def search_users(self, keyword: str, user_id: UUID) -> List[User]:
+        """搜索用户"""
+        try:
+            # 尝试将关键词转换为UUID
+            keyword_uuid = UUID(keyword)
+            uuid_match = User.id == keyword_uuid
+        except ValueError:
+            # 如果转换失败，则不添加UUID匹配条件
+            uuid_match = False
+
+        # 构建查询条件
+        conditions = [
+            or_(
+                User.email.ilike(f"%{keyword}%"),
+                User.nickname.ilike(f"%{keyword}%"),
+                uuid_match
+            ),
+            User.is_deleted == False,
+            User.id != user_id
+        ]
+
+        # 获取数据
+        result = await self.session.execute(
+            select(User)
+            .where(and_(*conditions))
+            .order_by(desc(User.create_time))
+        )
+        users = result.scalars().all()
+        
+        # 将UUID转换为字符串
+        for user in users:
+            user.id = str(user.id)
+            
+        return users 

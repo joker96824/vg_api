@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import cards, decks, auth
+from .endpoints import cards, decks, auth, friendship
 from . import card_import
 
 api_router = APIRouter()
@@ -15,3 +15,6 @@ api_router.include_router(card_import.router, prefix="/card_import", tags=["card
 
 # 注册认证相关路由
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+
+# 注册好友相关路由
+api_router.include_router(friendship.router, prefix="/friends", tags=["friends"])
