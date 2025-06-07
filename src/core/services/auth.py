@@ -502,6 +502,13 @@ class AuthService:
         
         await self.session.commit()
         return {
+            "user": {
+                "id": str(user.id),
+                "mobile": user.mobile,
+                "email": user.email,
+                "nickname": user.nickname,
+                "level": user.level
+            },
             "token": new_token,
             "expires_at": (datetime.utcnow() + timedelta(hours=40/60)).isoformat()
         }
