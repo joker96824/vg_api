@@ -197,35 +197,25 @@ async def login(
 @router.post("/logout", response_model=AuthSimpleSuccessResponse)
 async def logout(
     request: Request,
-    db: AsyncSession = Depends(get_session)
+    data: LogoutRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
 ):
     """用户登出"""
     try:
         APILogger.log_request(
             "用户登出",
+            用户ID=current_user["id"],
             IP=request.client.host,
             设备信息=request.headers.get("User-Agent", "")
         )
         
-        # 从请求头获取 token
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            APILogger.log_warning(
-                "用户登出",
-                "未提供有效的认证token",
-                IP=request.client.host
-            )
-            return ErrorResponse.create(
-                code=ResponseCode.UNAUTHORIZED,
-                message="未提供有效的认证token"
-            )
-        
-        token = auth_header.split(" ")[1]
         auth_service = AuthService(db)
-        await auth_service.logout(token)
+        await auth_service.logout(data.token)
         
         APILogger.log_response(
             "用户登出",
+            用户ID=current_user["id"],
             操作结果="成功"
         )
         
@@ -235,7 +225,7 @@ async def logout(
             data={}
         )
     except Exception as e:
-        APILogger.log_error("用户登出", e, IP=request.client.host)
+        APILogger.log_error("用户登出", e, 用户ID=current_user["id"], IP=request.client.host)
         return ErrorResponse.create(
             code=ResponseCode.SERVER_ERROR,
             message=str(e)
