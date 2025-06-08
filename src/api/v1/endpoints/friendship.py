@@ -27,7 +27,7 @@ async def create_friend_request(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"请求格式错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"发送好友请求失败: {str(e)}")
 
 @router.get("/requests", response_model=List[FriendRequestResponse])
 async def get_friend_requests(
@@ -35,9 +35,12 @@ async def get_friend_requests(
     db: AsyncSession = Depends(get_session)
 ):
     """获取好友请求列表"""
-    service = FriendshipService(db)
-    requests = await service.get_friend_requests(current_user["id"])
-    return requests
+    try:
+        service = FriendshipService(db)
+        requests = await service.get_friend_requests(current_user["id"])
+        return requests
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取好友请求列表失败: {str(e)}")
 
 @router.put("/requests/accept")
 async def accept_friend_request(
@@ -46,12 +49,14 @@ async def accept_friend_request(
     db: AsyncSession = Depends(get_session)
 ):
     """接受好友请求"""
-    service = FriendshipService(db)
     try:
+        service = FriendshipService(db)
         await service.accept_friend_request(request.request_id, current_user["id"])
         return {"message": "已接受好友请求"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"接受好友请求失败: {str(e)}")
 
 @router.put("/requests/reject")
 async def reject_friend_request(
@@ -60,12 +65,14 @@ async def reject_friend_request(
     db: AsyncSession = Depends(get_session)
 ):
     """拒绝好友请求"""
-    service = FriendshipService(db)
     try:
+        service = FriendshipService(db)
         await service.reject_friend_request(request.request_id, current_user["id"])
         return {"message": "已拒绝好友请求"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"拒绝好友请求失败: {str(e)}")
 
 @router.get("", response_model=List[FriendshipResponse])
 async def get_friends(
@@ -73,9 +80,12 @@ async def get_friends(
     db: AsyncSession = Depends(get_session)
 ):
     """获取好友列表"""
-    service = FriendshipService(db)
-    friendships = await service.get_friends(current_user["id"])
-    return friendships
+    try:
+        service = FriendshipService(db)
+        friendships = await service.get_friends(current_user["id"])
+        return friendships
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取好友列表失败: {str(e)}")
 
 @router.get("/blocked", response_model=List[FriendshipResponse])
 async def get_blocked_friends(
@@ -83,9 +93,12 @@ async def get_blocked_friends(
     db: AsyncSession = Depends(get_session)
 ):
     """获取黑名单列表"""
-    service = FriendshipService(db)
-    friendships = await service.get_friends(current_user["id"], include_blocked=True)
-    return friendships
+    try:
+        service = FriendshipService(db)
+        friendships = await service.get_friends(current_user["id"], include_blocked=True)
+        return friendships
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取黑名单列表失败: {str(e)}")
 
 @router.put("/{friendship_id}/block", response_model=FriendshipResponse)
 async def block_friend(
@@ -94,15 +107,20 @@ async def block_friend(
     db: AsyncSession = Depends(get_session)
 ):
     """将好友拉入黑名单"""
-    service = FriendshipService(db)
-    db_friendship = await service.update_friendship(
-        friendship_id,
-        current_user["id"],
-        FriendshipUpdate(is_blocked=True)
-    )
-    if not db_friendship:
-        raise HTTPException(status_code=404, detail="好友关系不存在")
-    return db_friendship
+    try:
+        service = FriendshipService(db)
+        db_friendship = await service.update_friendship(
+            friendship_id,
+            current_user["id"],
+            FriendshipUpdate(is_blocked=True)
+        )
+        if not db_friendship:
+            raise HTTPException(status_code=404, detail="好友关系不存在")
+        return db_friendship
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"拉黑好友失败: {str(e)}")
 
 @router.delete("/{friendship_id}/block", response_model=FriendshipResponse)
 async def unblock_friend(
@@ -111,15 +129,20 @@ async def unblock_friend(
     db: AsyncSession = Depends(get_session)
 ):
     """将好友移出黑名单"""
-    service = FriendshipService(db)
-    db_friendship = await service.update_friendship(
-        friendship_id,
-        current_user["id"],
-        FriendshipUpdate(is_blocked=False)
-    )
-    if not db_friendship:
-        raise HTTPException(status_code=404, detail="好友关系不存在")
-    return db_friendship
+    try:
+        service = FriendshipService(db)
+        db_friendship = await service.update_friendship(
+            friendship_id,
+            current_user["id"],
+            FriendshipUpdate(is_blocked=False)
+        )
+        if not db_friendship:
+            raise HTTPException(status_code=404, detail="好友关系不存在")
+        return db_friendship
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"取消拉黑好友失败: {str(e)}")
 
 @router.put("/{friendship_id}/remark", response_model=FriendshipResponse)
 async def update_friend_remark(
@@ -129,15 +152,20 @@ async def update_friend_remark(
     db: AsyncSession = Depends(get_session)
 ):
     """修改好友备注"""
-    service = FriendshipService(db)
-    db_friendship = await service.update_friendship(
-        friendship_id,
-        current_user["id"],
-        FriendshipUpdate(remark=remark)
-    )
-    if not db_friendship:
-        raise HTTPException(status_code=404, detail="好友关系不存在")
-    return db_friendship
+    try:
+        service = FriendshipService(db)
+        db_friendship = await service.update_friendship(
+            friendship_id,
+            current_user["id"],
+            FriendshipUpdate(remark=remark)
+        )
+        if not db_friendship:
+            raise HTTPException(status_code=404, detail="好友关系不存在")
+        return db_friendship
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"修改好友备注失败: {str(e)}")
 
 @router.delete("/{friend_id}")
 async def delete_friendship(
@@ -146,9 +174,11 @@ async def delete_friendship(
     db: AsyncSession = Depends(get_session)
 ):
     """删除好友关系"""
-    service = FriendshipService(db)
     try:
+        service = FriendshipService(db)
         await service.delete_friendship_by_friend_id(current_user["id"], friend_id)
         return {"message": "好友已删除"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) 
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除好友失败: {str(e)}") 
