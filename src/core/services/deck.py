@@ -594,6 +594,7 @@ class DeckService:
             # 在返回结果前更新数据库中的is_valid字段
             is_valid = len(problems) == 0
             deck.is_valid = is_valid
+            deck.preset = 1 if is_valid else -1
             deck.update_time = datetime.now()
             deck.remark = ";".join(problems)
             await self.db.commit()

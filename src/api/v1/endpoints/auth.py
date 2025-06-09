@@ -194,12 +194,11 @@ async def login(
             message=str(e)
         )
 
-@router.post("/logout", response_model=AuthSimpleSuccessResponse)
+@router.post("/logout")
 async def logout(
     request: Request,
-    data: LogoutRequest,
-    db: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
 ):
     """用户登出"""
     try:
@@ -211,7 +210,7 @@ async def logout(
         )
         
         auth_service = AuthService(db)
-        await auth_service.logout(data.token)
+        await auth_service.logout(current_user["id"])
         
         APILogger.log_response(
             "用户登出",
@@ -219,17 +218,14 @@ async def logout(
             操作结果="成功"
         )
         
-        return AuthSimpleSuccessResponse.create(
-            code=ResponseCode.SUCCESS,
-            message="登出成功",
-            data={}
-        )
+        return {"message": "登出成功"}
     except Exception as e:
-        APILogger.log_error("用户登出", e, 用户ID=current_user["id"], IP=request.client.host)
-        return ErrorResponse.create(
-            code=ResponseCode.SERVER_ERROR,
-            message=str(e)
+        APILogger.log_error(
+            "用户登出",
+            e,
+            用户ID=current_user["id"]
         )
+        return {"message": "登出失败"}
 
 @router.post("/reset-password", response_model=AuthSimpleSuccessResponse)
 async def reset_password(
