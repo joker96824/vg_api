@@ -11,11 +11,9 @@
 ├── src/                   # 源代码目录
 │   ├── api/              # API层
 │   │   └── v1/          # API版本1
-│   │       ├── endpoints/  # 路由处理器
-│   │       └── schemas/    # API请求/响应模型（已迁移到core/schemas）
+│   │       └── endpoints/  # 路由处理器
 │   ├── core/             # 核心功能
 │   │   ├── auth/         # 认证相关
-│   │   ├── config/       # 核心配置
 │   │   ├── models/       # 数据库模型
 │   │   ├── schemas/      # 数据模型定义
 │   │   ├── services/     # 业务服务
@@ -24,10 +22,11 @@
 │   └── main.py           # 应用入口
 ├── tests/                # 测试文件目录
 ├── .editorconfig         # 编辑器配置
-├── .gitignore           # Git忽略文件
-├── README.md            # 项目说明文档
-├── requirements.txt     # 项目依赖
-└── setup.py            # 项目安装配置
+├── .gitignore            # Git忽略文件
+├── .env                  # 基础环境配置（通过config/setting读取并配置）
+├── README.md             # 项目说明文档
+├── requirements.txt      # 项目依赖
+└── setup.py              # 项目安装配置
 ```
 
 ## 文件说明
@@ -50,12 +49,6 @@
     - `services/` - 业务服务层
     - `utils/` - 工具函数（所有通用工具函数统一放在这里）
   - `templates/` - 模板文件
-
-### 数据库
-- `alembic/` - 数据库迁移相关文件
-  - `versions/` - 迁移版本文件
-  - `env.py` - 迁移环境配置
-  - `script.py.mako` - 迁移脚本模板
 
 ### 测试
 - `tests/` - 测试文件目录（所有测试文件统一放在这里）

@@ -104,7 +104,7 @@ AuthSimpleSuccessResponse = SuccessResponse[Dict[str, Any]]
 class UpdateUserLevelRequest(BaseModel):
     """更新用户等级请求模型"""
     user_id: str = Field(..., description="目标用户ID")
-    new_level: int = Field(..., description="新的用户等级", ge=1, le=9)
+    new_level: int = Field(..., description="新的用户等级", ge=1, le=8)
 
 class UserListResponse(BaseModel):
     """用户列表响应模型"""

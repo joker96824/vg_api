@@ -132,14 +132,16 @@ async def get_deck(
 @router.get("/decks", response_model=DeckListSuccessResponse, summary="获取卡组列表")
 async def get_decks(
     session: AsyncSession = Depends(get_session),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    only_preset: bool = Query(False, description="是否只返回预设卡组")
 ):
     """获取当前用户的卡组列表"""
     try:
         params = DeckQueryParams(
             user_id=current_user["id"],
             page=1,
-            page_size=100
+            page_size=100,
+            only_preset=only_preset
         )
         
         APILogger.log_request(
@@ -225,12 +227,28 @@ async def update_deck(
                 ).dict()
             )
             
-        updated_deck = await deck_service.update_deck(deck_id, deck)
+        try:
+            updated_deck = await deck_service.update_deck(deck_id, deck)
+        except ValueError as e:
+            APILogger.log_error(
+                "更新卡组",
+                str(e),
+                用户ID=current_user["id"],
+                卡组ID=str(deck_id)
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.VALIDATION_ERROR,
+                    message=str(e)
+                ).dict()
+            )
         
         APILogger.log_response(
             "更新卡组",
             卡组ID=str(updated_deck.id),
-            卡组名称=updated_deck.deck_name
+            卡组名称=updated_deck.deck_name,
+            卡片数量=len(updated_deck.deck_cards)
         )
         
         return DeckSuccessResponse.create(
@@ -238,8 +256,16 @@ async def update_deck(
             message="卡组更新成功",
             data=updated_deck
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        APILogger.log_error("更新卡组", e, 用户ID=current_user["id"], 卡组ID=str(deck_id))
+        APILogger.log_error(
+            "更新卡组",
+            str(e),
+            用户ID=current_user["id"],
+            卡组ID=str(deck_id),
+            错误类型=type(e).__name__
+        )
         raise HTTPException(
             status_code=500,
             detail=ErrorResponse.create(

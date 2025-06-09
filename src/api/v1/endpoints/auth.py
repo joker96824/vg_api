@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import JSONResponse, Response
-from typing import Optional
+from typing import Optional, List
 from src.core.services.auth import AuthService
 from src.core.services.captcha import CaptchaService
 from src.core.services.sms import SMSService
@@ -24,6 +24,7 @@ from src.core.schemas.auth import (
     AuthUser, AuthToken, UpdateUserLevelRequest, UserListResponse
 )
 from src.core.schemas.response import ResponseCode, ErrorResponse, SuccessResponse
+from uuid import UUID
 
 router = APIRouter()
 
@@ -193,52 +194,38 @@ async def login(
             message=str(e)
         )
 
-@router.post("/logout", response_model=AuthSimpleSuccessResponse)
+@router.post("/logout")
 async def logout(
     request: Request,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
     """用户登出"""
     try:
         APILogger.log_request(
             "用户登出",
+            用户ID=current_user["id"],
             IP=request.client.host,
             设备信息=request.headers.get("User-Agent", "")
         )
         
-        # 从请求头获取 token
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            APILogger.log_warning(
-                "用户登出",
-                "未提供有效的认证token",
-                IP=request.client.host
-            )
-            return ErrorResponse.create(
-                code=ResponseCode.UNAUTHORIZED,
-                message="未提供有效的认证token"
-            )
-        
-        token = auth_header.split(" ")[1]
         auth_service = AuthService(db)
-        await auth_service.logout(token)
+        await auth_service.logout(current_user["id"])
         
         APILogger.log_response(
             "用户登出",
+            用户ID=current_user["id"],
             操作结果="成功"
         )
         
-        return AuthSimpleSuccessResponse.create(
-            code=ResponseCode.SUCCESS,
-            message="登出成功",
-            data={}
-        )
+        return {"message": "登出成功"}
     except Exception as e:
-        APILogger.log_error("用户登出", e, IP=request.client.host)
-        return ErrorResponse.create(
-            code=ResponseCode.SERVER_ERROR,
-            message=str(e)
+        APILogger.log_error(
+            "用户登出",
+            e,
+            用户ID=current_user["id"]
         )
+        return {"message": "登出失败"}
 
 @router.post("/reset-password", response_model=AuthSimpleSuccessResponse)
 async def reset_password(
@@ -1124,4 +1111,15 @@ async def update_user_level(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"更新用户等级失败: {str(e)}"
             ).dict()
-        ) 
+        )
+
+@router.get("/search", response_model=List[AuthUser])
+async def search_users(
+    keyword: str = Query(..., description="搜索关键词"),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """搜索用户"""
+    service = AuthService(db)
+    users = await service.search_users(keyword, current_user["id"])
+    return users 

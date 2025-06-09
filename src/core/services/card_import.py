@@ -29,48 +29,74 @@ class CardImportService:
         }
         
         try:
-            # 1. 通过 name_cn 和 name_jp 判断卡牌是否已存在
+            # 1. 通过 name_cn、card_type 和 card_number 判断卡牌是否已存在
             result["step"] = "check_existing"
             name_cn = card_data.get("name_cn")
-            name_jp = card_data.get("name_jp")
+            card_type = card_data.get("card_type")
+            ability = card_data.get("ability")
+            card_number = card_data.get("card_number", "")
             
-            if name_cn or name_jp:
-                stmt = select(Card).where((Card.name_cn == name_cn) | (Card.name_jp == name_jp))
-                result_db = await self.session.execute(stmt)
-                existing_card = result_db.scalar_one_or_none()
+            if not name_cn or not card_type or not card_number:
+                error_msg = f"缺少必要字段: name_cn={name_cn}, card_type={card_type}, card_number={card_number}, ability={ability}"
+                logger.error(f"卡牌数据错误: {json.dumps(card_data, ensure_ascii=False)}\n{error_msg}")
+                result["status"] = "error"
+                result["error"] = error_msg
+                return result
+
+            # 获取card_number的前缀（/前面的部分）
+            card_number_prefix = card_number.split("/")[0]
+            
+            # 构建查询条件
+            conditions = [
+                Card.name_cn == name_cn,
+                Card.card_type == card_type,
+                Card.ability == ability,
+                Card.card_number.like(f"{card_number_prefix}%")  # 使用LIKE进行前缀匹配
+            ]
+            
+            stmt = select(Card).where(*conditions)
+            result_db = await self.session.execute(stmt)
+            existing_card = result_db.scalar_one_or_none()
+            
+            if existing_card:
+                logger.info(f"卡牌已存在: {name_cn}-{card_type}-{card_number_prefix}")
+                result["status"] = "exists"
+                result["card"] = existing_card
                 
-                if existing_card:
-                    logger.info(f"卡牌已存在: {name_cn} / {name_jp}")
-                    result["status"] = "exists"
-                    result["card"] = existing_card
-                    
-                    # 2. 检查 rarity_infos 中 card_number 是否已存在
-                    result["step"] = "check_rarity"
-                    if card_data.get("rarity_infos"):
-                        rarity_added = False
-                        for rarity_data in card_data["rarity_infos"]:
-                            card_number = rarity_data.get("card_number")
-                            if card_number:
-                                # 检查该 card_number 是否已存在
-                                stmt = select(CardRarity).where(
-                                    CardRarity.card_id == existing_card.id,
-                                    CardRarity.card_number == card_number
-                                )
-                                result_db = await self.session.execute(stmt)
-                                if result_db.scalar_one_or_none() is None:
-                                    # 不存在则添加新的稀有度信息
-                                    rarity_info = CardRarity(
-                                        card_id=existing_card.id,
-                                        pack_name=rarity_data.get("pack_name"),
-                                        card_number=card_number,
-                                        release_info=rarity_data.get("release_info"),
-                                        quote=rarity_data.get("quote"),
-                                        illustrator=rarity_data.get("illustrator"),
-                                        image_url=rarity_data.get("image_url"),
-                                    )
-                                    self.session.add(rarity_info)
-                                    await self.session.flush()
-                                    rarity_added = True
+                # 2. 检查 rarity_infos 中 card_number 是否已存在
+                result["step"] = "check_rarity"
+                if card_data.get("rarity_infos"):
+                    rarity_added = False
+                    for rarity_data in card_data["rarity_infos"]:
+                        card_number = rarity_data.get("card_number")
+                        pack_name = rarity_data.get("pack_name")
+                        if not card_number or not pack_name:
+                            error_msg = f"稀有度信息缺少必要字段: card_number={card_number}, pack_name={pack_name}"
+                            logger.error(f"卡牌数据错误: {json.dumps(card_data, ensure_ascii=False)}\n{error_msg}")
+                            result["status"] = "error"
+                            result["error"] = error_msg
+                            return result
+
+                        # 检查该 card_number 是否已存在
+                        stmt = select(CardRarity).where(
+                            CardRarity.card_id == existing_card.id,
+                            CardRarity.card_number == card_number
+                        )
+                        result_db = await self.session.execute(stmt)
+                        if result_db.scalar_one_or_none() is None:
+                            # 不存在则添加新的稀有度信息
+                            rarity_info = CardRarity(
+                                card_id=existing_card.id,
+                                pack_name=pack_name,
+                                card_number=card_number,
+                                release_info=rarity_data.get("release_info"),
+                                quote=rarity_data.get("quote"),
+                                illustrator=rarity_data.get("illustrator"),
+                                image_url=rarity_data.get("image_url"),
+                            )
+                            self.session.add(rarity_info)
+                            await self.session.flush()
+                            rarity_added = True
                         
                         if rarity_added:
                             await self.session.commit()
@@ -88,7 +114,7 @@ class CardImportService:
                 card_number=card_data.get("card_number"),
                 card_rarity=card_data.get("card_rarity"),
                 name_cn=name_cn,
-                name_jp=name_jp,
+                name_jp=card_data.get("name_jp"),
                 nation=card_data.get("nation"),
                 clan=card_data.get("clan"),
                 grade=card_data.get("grade"),
@@ -97,7 +123,7 @@ class CardImportService:
                 shield=card_data.get("shield"),
                 critical=card_data.get("critical"),
                 special_mark=card_data.get("special_mark"),
-                card_type=card_data.get("card_type"),
+                card_type=card_type,
                 trigger_type=card_data.get("trigger_type"),
                 ability=card_data.get("ability"),
                 card_alias=card_data.get("card_alias"),
