@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     EMAIL_SENDER_EMAIL: str = ""
     EMAIL_SENDER_PASSWORD: str = ""
 
+    # 文件上传配置
+    UPLOAD_DIR: str = "../uploads"
+    MAX_UPLOAD_SIZE: int = 2 * 1024 * 1024  # 2MB
+    ALLOWED_IMAGE_TYPES: List[str] = ["image/jpeg", "image/png", "image/gif"]
+
     @validator("ALLOWED_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v):
         if isinstance(v, str) and not v.startswith("["):

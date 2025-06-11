@@ -50,6 +50,9 @@ async def redirect_cards_path(path: str):
 # 注册路由
 app.include_router(api_router, prefix="/api/v1")
 
+# 挂载静态文件服务
+app.mount("/uploads", StaticFiles(directory="../uploads"), name="uploads")
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to Vanguard API"}

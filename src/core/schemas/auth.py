@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
+from fastapi import UploadFile
 from .response import ResponseCode, SuccessResponse, ErrorResponse
 
 class SendSMSRequest(BaseModel):
@@ -46,6 +47,10 @@ class UpdateMobileRequest(BaseModel):
 
 class UpdateAvatarRequest(BaseModel):
     avatar_url: str = Field(..., description="头像URL地址")
+
+class UploadAvatarRequest(BaseModel):
+    """上传头像请求模型"""
+    file: UploadFile = Field(..., description="头像文件")
 
 class SendEmailRequest(BaseModel):
     email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')

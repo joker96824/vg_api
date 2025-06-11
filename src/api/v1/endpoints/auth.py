@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, UploadFile, File
 from fastapi.responses import JSONResponse, Response
 from typing import Optional, List
 from src.core.services.auth import AuthService
@@ -593,6 +593,52 @@ async def update_avatar(
     except ValueError as e:
         APILogger.log_warning(
             "修改用户头像",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
+        )
+
+@router.post("/upload-avatar", response_model=AuthSimpleSuccessResponse)
+async def upload_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """上传用户头像"""
+    try:
+        APILogger.log_request(
+            "上传用户头像",
+            用户ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
+        result = await auth_service.upload_avatar(
+            user_id=current_user["id"],
+            file=file,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "上传用户头像",
+            用户ID=current_user["id"],
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="头像上传成功",
+            data=result["data"]
+        )
+    except ValueError as e:
+        APILogger.log_warning(
+            "上传用户头像",
             "操作失败",
             用户ID=current_user["id"],
             错误信息=str(e)

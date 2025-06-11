@@ -14,7 +14,7 @@ import logging
 import redis
 from config.settings import settings
 from src.core.services.captcha import CaptchaService
-from fastapi import Request
+from fastapi import Request, UploadFile
 from src.core.services.email import EmailService
 from uuid import UUID
 
@@ -650,6 +650,68 @@ class AuthService:
                 "avatar": avatar_url
             }
         }
+
+    async def upload_avatar(
+        self,
+        user_id: str,
+        file: UploadFile,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """上传用户头像
+        
+        Args:
+            user_id: 用户ID
+            file: 上传的文件
+            ip: 用户IP
+            device_fingerprint: 设备指纹
+            
+        Returns:
+            Dict[str, Any]: 包含上传结果的字典
+        """
+        # 验证文件类型
+        if not file.content_type.startswith('image/'):
+            raise ValueError("只支持上传图片文件")
+            
+        # 验证文件大小（限制为2MB）
+        file_size = 0
+        chunk_size = 1024 * 1024  # 1MB
+        while chunk := await file.read(chunk_size):
+            file_size += len(chunk)
+            if file_size > 2 * 1024 * 1024:  # 2MB
+                raise ValueError("文件大小不能超过2MB")
+                
+        # 重置文件指针
+        await file.seek(0)
+        
+        # 生成文件名
+        file_ext = file.filename.split('.')[-1].lower()
+        if file_ext not in ['jpg', 'jpeg', 'png', 'gif']:
+            raise ValueError("只支持jpg、jpeg、png、gif格式的图片")
+            
+        # 生成唯一的文件名
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        filename = f"avatar_{user_id}_{timestamp}_Unaudited.{file_ext}"
+        
+        # 保存文件
+        upload_dir = os.path.join(settings.UPLOAD_DIR, 'avatars')
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, filename)
+        
+        with open(file_path, 'wb') as f:
+            while chunk := await file.read(chunk_size):
+                f.write(chunk)
+                
+        # 生成访问URL
+        avatar_url = f"/uploads/avatars/{filename}"
+        
+        # 更新用户头像
+        return await self.update_avatar(
+            user_id=user_id,
+            avatar_url=avatar_url,
+            ip=ip,
+            device_fingerprint=device_fingerprint
+        )
 
     def _hash_email(self, email: str) -> str:
         """邮箱哈希"""
