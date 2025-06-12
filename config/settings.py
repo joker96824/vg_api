@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     EMAIL_SENDER_PASSWORD: str = ""
 
     # 文件上传配置
-    UPLOAD_DIR: str = "../uploads"
+    AVATAR_DIR: str = "../image/avatars"
     MAX_UPLOAD_SIZE: int = 2 * 1024 * 1024  # 2MB
     ALLOWED_IMAGE_TYPES: List[str] = ["image/jpeg", "image/png", "image/gif"]
 

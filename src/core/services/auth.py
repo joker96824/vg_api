@@ -615,7 +615,7 @@ class AuthService:
     async def update_avatar(
         self,
         user_id: str,
-        avatar_url: str,
+        avatar: str,
         ip: str = "",
         device_fingerprint: str = ""
     ) -> Dict[str, Any]:
@@ -629,7 +629,7 @@ class AuthService:
             raise ValueError("用户不存在或已被删除")
             
         # 更新头像
-        user.avatar = avatar_url
+        user.avatar = avatar
         
         # 记录修改日志
         login_log = LoginLog(
@@ -647,7 +647,7 @@ class AuthService:
             "success": True,
             "message": "头像修改成功",
             "data": {
-                "avatar": avatar_url
+                "avatar": avatar
             }
         }
 
@@ -692,23 +692,24 @@ class AuthService:
         # 生成唯一的文件名
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         filename = f"avatar_{user_id}_{timestamp}_Unaudited.{file_ext}"
+        avatar_filename = f"avatar_{user_id}_{timestamp}_Valid.{file_ext}"
         
         # 保存文件
-        upload_dir = os.path.join(settings.UPLOAD_DIR, 'avatars')
-        os.makedirs(upload_dir, exist_ok=True)
-        file_path = os.path.join(upload_dir, filename)
+        avatar_dir = settings.AVATAR_DIR
+        os.makedirs(avatar_dir, exist_ok=True)
+        file_path = os.path.join(avatar_dir, filename)
         
         with open(file_path, 'wb') as f:
             while chunk := await file.read(chunk_size):
                 f.write(chunk)
                 
         # 生成访问URL
-        avatar_url = f"/uploads/avatars/{filename}"
+        avatar_url = f"/image/avatars/{filename}"
         
         # 更新用户头像
         return await self.update_avatar(
             user_id=user_id,
-            avatar_url=avatar_url,
+            avatar=avatar_filename,
             ip=ip,
             device_fingerprint=device_fingerprint
         )
@@ -1167,10 +1168,10 @@ class AuthService:
             raise ValueError("新状态必须是'Valid'或'Unvalid'")
             
         # 构建文件路径
-        upload_dir = os.path.join(settings.UPLOAD_DIR, 'avatars')
-        old_path = os.path.join(upload_dir, filename)
+        avatar_dir = settings.AVATAR_DIR
+        old_path = os.path.join(avatar_dir, filename)
         new_filename = filename.replace('_Unaudited.', f'_{new_status}.')
-        new_path = os.path.join(upload_dir, new_filename)
+        new_path = os.path.join(avatar_dir, new_filename)
         
         # 检查文件是否存在
         if not os.path.exists(old_path):
@@ -1220,13 +1221,13 @@ class AuthService:
             Dict[str, Any]: 包含未审核文件列表的字典
         """
         # 获取上传目录
-        upload_dir = os.path.join(settings.UPLOAD_DIR, 'avatars')
+        avatar_dir = settings.AVATAR_DIR
         
         # 获取所有未审核的文件
         unaudited_files = []
-        for filename in os.listdir(upload_dir):
+        for filename in os.listdir(avatar_dir):
             if '_Unaudited.' in filename:
-                file_path = os.path.join(upload_dir, filename)
+                file_path = os.path.join(avatar_dir, filename)
                 file_stat = os.stat(file_path)
                 unaudited_files.append({
                     "filename": filename,

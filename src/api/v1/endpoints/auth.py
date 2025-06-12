@@ -63,7 +63,7 @@ async def send_sms(
     captcha_service = CaptchaService()
     if not await captcha_service.verify(request, data.captcha):
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message="图形验证码错误"
         )
     
@@ -78,7 +78,7 @@ async def send_sms(
     # 如果发送失败（超出限制），返回错误响应
     if not result.get("success", True):
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=result.get("message", "发送失败")
         )
     
@@ -140,7 +140,7 @@ async def register(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -191,7 +191,7 @@ async def login(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -260,7 +260,7 @@ async def reset_password(
         )
     except ValueError as e:
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -288,7 +288,7 @@ async def clear_login_errors(
                 用户ID=current_user["id"]
             )
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message="无效的用户信息"
             )
             
@@ -313,7 +313,7 @@ async def clear_login_errors(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -361,7 +361,7 @@ async def force_reset_password(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -405,7 +405,7 @@ async def check_session(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -454,7 +454,7 @@ async def refresh_token(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -502,7 +502,7 @@ async def update_nickname(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -553,7 +553,7 @@ async def update_mobile(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -599,7 +599,7 @@ async def update_avatar(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -644,9 +644,12 @@ async def upload_avatar(
             用户ID=current_user["id"],
             错误信息=str(e)
         )
-        return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
-            message=str(e)
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse.create(
+                code=ResponseCode.PARAM_ERROR,
+                message=str(e)
+            ).dict()
         )
 
 @router.post("/send-email", response_model=AuthSimpleSuccessResponse)
@@ -667,7 +670,7 @@ async def send_email(
         captcha_service = CaptchaService()
         if not await captcha_service.verify(request, data.captcha):
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message="图形验证码错误"
             )
         
@@ -675,7 +678,7 @@ async def send_email(
         valid_scenes = ["register", "reset_password", "update_email"]
         if data.scene not in valid_scenes:
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message="无效的验证码场景"
             )
         
@@ -684,7 +687,7 @@ async def send_email(
             auth_service = AuthService(db)
             if not await auth_service.check_email_exists(data.email):
                 return ErrorResponse.create(
-                    code=ResponseCode.INVALID_PARAMS,
+                    code=ResponseCode.PARAM_ERROR,
                     message="该邮箱未注册"
                 )
         
@@ -699,7 +702,7 @@ async def send_email(
         # 如果发送失败（超出限制），返回错误响应
         if not result.get("success", True):
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message=result.get("message", "发送失败")
             )
         
@@ -772,7 +775,7 @@ async def register_by_email(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -823,7 +826,7 @@ async def login_by_email(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -878,7 +881,7 @@ async def reset_password_by_email(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -911,7 +914,7 @@ async def verify_and_reset_password(
                 邮箱=data.email
             )
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message=verify_result.get("message", "验证码验证失败")
             )
         
@@ -929,7 +932,7 @@ async def verify_and_reset_password(
                 邮箱=data.email
             )
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message="用户不存在"
             )
             
@@ -971,7 +974,7 @@ async def verify_and_reset_password(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -1022,7 +1025,7 @@ async def update_email(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -1146,7 +1149,7 @@ async def update_user_level(
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message=str(e)
             ).dict()
         )
@@ -1219,7 +1222,7 @@ async def update_file_status(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 

@@ -51,7 +51,7 @@ async def redirect_cards_path(path: str):
 app.include_router(api_router, prefix="/api/v1")
 
 # 挂载静态文件服务
-app.mount("/uploads", StaticFiles(directory="../uploads"), name="uploads")
+app.mount("/image", StaticFiles(directory="../image"), name="image")
 
 @app.get("/")
 async def root():
