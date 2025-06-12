@@ -21,7 +21,8 @@ from src.core.schemas.auth import (
     ForceResetPasswordByEmailRequest, UpdateEmailRequest,
     SendResetPasswordEmailRequest, ResetPasswordWithEmailRequest,
     AuthSuccessResponse, AuthUserSuccessResponse, AuthSimpleSuccessResponse,
-    AuthUser, AuthToken, UpdateUserLevelRequest, UserListResponse
+    AuthUser, AuthToken, UpdateUserLevelRequest, UserListResponse,
+    UpdateFileStatusRequest, FileListResponse
 )
 from src.core.schemas.response import ResponseCode, ErrorResponse, SuccessResponse
 from uuid import UUID
@@ -1168,4 +1169,98 @@ async def search_users(
     """搜索用户"""
     service = AuthService(db)
     users = await service.search_users(keyword, current_user["id"])
-    return users 
+    return users
+
+@router.put("/files/status", response_model=AuthSimpleSuccessResponse)
+async def update_file_status(
+    request: Request,
+    data: UpdateFileStatusRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(require_admin)
+):
+    """更新文件状态（需要level=5权限）"""
+    try:
+        APILogger.log_request(
+            "更新文件状态",
+            操作者ID=current_user["id"],
+            文件名=data.filename,
+            新状态=data.new_status,
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
+        result = await auth_service.update_file_status(
+            filename=data.filename,
+            new_status=data.new_status,
+            operator_id=current_user["id"],
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "更新文件状态",
+            操作者ID=current_user["id"],
+            文件名=data.filename,
+            新状态=data.new_status,
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="文件状态更新成功",
+            data=result["data"]
+        )
+    except ValueError as e:
+        APILogger.log_warning(
+            "更新文件状态",
+            "操作失败",
+            操作者ID=current_user["id"],
+            文件名=data.filename,
+            错误信息=str(e)
+        )
+        return ErrorResponse.create(
+            code=ResponseCode.INVALID_PARAMS,
+            message=str(e)
+        )
+
+@router.get("/files/unaudited", response_model=SuccessResponse[FileListResponse])
+async def get_unaudited_files(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(require_admin)
+):
+    """获取所有未审核的文件（需要level=5权限）"""
+    try:
+        APILogger.log_request(
+            "获取未审核文件列表",
+            操作者ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
+        result = await auth_service.get_unaudited_files(
+            operator_id=current_user["id"],
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "获取未审核文件列表",
+            操作者ID=current_user["id"],
+            文件数量=result["total"]
+        )
+        
+        return SuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取未审核文件列表成功",
+            data=result
+        )
+    except Exception as e:
+        APILogger.log_error("获取未审核文件列表", e, 操作者ID=current_user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"获取未审核文件列表失败: {str(e)}"
+            ).dict()
+        ) 

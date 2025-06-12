@@ -1136,4 +1136,119 @@ class AuthService:
         for user in users:
             user.id = str(user.id)
             
-        return users 
+        return users
+
+    async def update_file_status(
+        self,
+        filename: str,
+        new_status: str,
+        operator_id: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """更新文件状态
+        
+        Args:
+            filename: 文件名
+            new_status: 新状态（'Valid' 或 'Unvalid'）
+            operator_id: 操作者ID
+            ip: 操作者IP
+            device_fingerprint: 设备指纹
+            
+        Returns:
+            Dict[str, Any]: 包含操作结果的字典
+        """
+        # 验证文件名格式
+        if not '_Unaudited.' in filename:
+            raise ValueError("文件名格式不正确，必须包含_Unaudited.")
+            
+        # 验证新状态
+        if new_status not in ['Valid', 'Unvalid']:
+            raise ValueError("新状态必须是'Valid'或'Unvalid'")
+            
+        # 构建文件路径
+        upload_dir = os.path.join(settings.UPLOAD_DIR, 'avatars')
+        old_path = os.path.join(upload_dir, filename)
+        new_filename = filename.replace('_Unaudited.', f'_{new_status}.')
+        new_path = os.path.join(upload_dir, new_filename)
+        
+        # 检查文件是否存在
+        if not os.path.exists(old_path):
+            raise ValueError("文件不存在")
+            
+        # 重命名文件
+        try:
+            os.rename(old_path, new_path)
+        except Exception as e:
+            raise ValueError(f"重命名文件失败：{str(e)}")
+            
+        # 记录操作日志
+        login_log = LoginLog(
+            user_id=operator_id,
+            login_type=12,  # 文件状态更新
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"文件 {filename} 状态更新为 {new_status}"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "文件状态更新成功",
+            "data": {
+                "old_filename": filename,
+                "new_filename": new_filename
+            }
+        }
+
+    async def get_unaudited_files(
+        self,
+        operator_id: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """获取所有未审核的文件
+        
+        Args:
+            operator_id: 操作者ID
+            ip: 操作者IP
+            device_fingerprint: 设备指纹
+            
+        Returns:
+            Dict[str, Any]: 包含未审核文件列表的字典
+        """
+        # 获取上传目录
+        upload_dir = os.path.join(settings.UPLOAD_DIR, 'avatars')
+        
+        # 获取所有未审核的文件
+        unaudited_files = []
+        for filename in os.listdir(upload_dir):
+            if '_Unaudited.' in filename:
+                file_path = os.path.join(upload_dir, filename)
+                file_stat = os.stat(file_path)
+                unaudited_files.append({
+                    "filename": filename,
+                    "size": file_stat.st_size,
+                    "create_time": datetime.fromtimestamp(file_stat.st_ctime).isoformat(),
+                    "modify_time": datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+                })
+                
+        # 记录操作日志
+        login_log = LoginLog(
+            user_id=operator_id,
+            login_type=13,  # 获取未审核文件列表
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"获取未审核文件列表，共 {len(unaudited_files)} 个文件"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "total": len(unaudited_files),
+            "items": unaudited_files
+        } 
