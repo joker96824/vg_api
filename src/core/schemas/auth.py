@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
+from fastapi import UploadFile
 from .response import ResponseCode, SuccessResponse, ErrorResponse
 
 class SendSMSRequest(BaseModel):
@@ -46,6 +47,10 @@ class UpdateMobileRequest(BaseModel):
 
 class UpdateAvatarRequest(BaseModel):
     avatar_url: str = Field(..., description="头像URL地址")
+
+class UploadAvatarRequest(BaseModel):
+    """上传头像请求模型"""
+    file: UploadFile = Field(..., description="头像文件")
 
 class SendEmailRequest(BaseModel):
     email: str = Field(pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
@@ -109,4 +114,21 @@ class UpdateUserLevelRequest(BaseModel):
 class UserListResponse(BaseModel):
     """用户列表响应模型"""
     total: int = Field(..., description="总记录数")
-    items: List[AuthUser] = Field(..., description="用户列表") 
+    items: List[AuthUser] = Field(..., description="用户列表")
+
+class UpdateFileStatusRequest(BaseModel):
+    """更新文件状态请求模型"""
+    filename: str = Field(..., description="文件名")
+    new_status: str = Field(..., description="新状态", pattern="^(Valid|Unvalid)$")
+
+class FileInfo(BaseModel):
+    """文件信息模型"""
+    filename: str
+    size: int
+    create_time: str
+    modify_time: str
+
+class FileListResponse(BaseModel):
+    """文件列表响应模型"""
+    total: int
+    items: List[FileInfo] 

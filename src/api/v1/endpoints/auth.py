@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, UploadFile, File
 from fastapi.responses import JSONResponse, Response
 from typing import Optional, List
 from src.core.services.auth import AuthService
@@ -21,7 +21,8 @@ from src.core.schemas.auth import (
     ForceResetPasswordByEmailRequest, UpdateEmailRequest,
     SendResetPasswordEmailRequest, ResetPasswordWithEmailRequest,
     AuthSuccessResponse, AuthUserSuccessResponse, AuthSimpleSuccessResponse,
-    AuthUser, AuthToken, UpdateUserLevelRequest, UserListResponse
+    AuthUser, AuthToken, UpdateUserLevelRequest, UserListResponse,
+    UpdateFileStatusRequest, FileListResponse
 )
 from src.core.schemas.response import ResponseCode, ErrorResponse, SuccessResponse
 from uuid import UUID
@@ -62,7 +63,7 @@ async def send_sms(
     captcha_service = CaptchaService()
     if not await captcha_service.verify(request, data.captcha):
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message="图形验证码错误"
         )
     
@@ -77,7 +78,7 @@ async def send_sms(
     # 如果发送失败（超出限制），返回错误响应
     if not result.get("success", True):
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=result.get("message", "发送失败")
         )
     
@@ -139,7 +140,7 @@ async def register(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -190,7 +191,7 @@ async def login(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -259,7 +260,7 @@ async def reset_password(
         )
     except ValueError as e:
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -287,7 +288,7 @@ async def clear_login_errors(
                 用户ID=current_user["id"]
             )
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message="无效的用户信息"
             )
             
@@ -312,7 +313,7 @@ async def clear_login_errors(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -360,7 +361,7 @@ async def force_reset_password(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -404,7 +405,7 @@ async def check_session(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -453,7 +454,7 @@ async def refresh_token(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -501,7 +502,7 @@ async def update_nickname(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -552,7 +553,7 @@ async def update_mobile(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -598,8 +599,57 @@ async def update_avatar(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
+        )
+
+@router.post("/upload-avatar", response_model=AuthSimpleSuccessResponse)
+async def upload_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """上传用户头像"""
+    try:
+        APILogger.log_request(
+            "上传用户头像",
+            用户ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
+        result = await auth_service.upload_avatar(
+            user_id=current_user["id"],
+            file=file,
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "上传用户头像",
+            用户ID=current_user["id"],
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="头像上传成功",
+            data=result["data"]
+        )
+    except ValueError as e:
+        APILogger.log_warning(
+            "上传用户头像",
+            "操作失败",
+            用户ID=current_user["id"],
+            错误信息=str(e)
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse.create(
+                code=ResponseCode.PARAM_ERROR,
+                message=str(e)
+            ).dict()
         )
 
 @router.post("/send-email", response_model=AuthSimpleSuccessResponse)
@@ -620,7 +670,7 @@ async def send_email(
         captcha_service = CaptchaService()
         if not await captcha_service.verify(request, data.captcha):
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message="图形验证码错误"
             )
         
@@ -628,7 +678,7 @@ async def send_email(
         valid_scenes = ["register", "reset_password", "update_email"]
         if data.scene not in valid_scenes:
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message="无效的验证码场景"
             )
         
@@ -637,7 +687,7 @@ async def send_email(
             auth_service = AuthService(db)
             if not await auth_service.check_email_exists(data.email):
                 return ErrorResponse.create(
-                    code=ResponseCode.INVALID_PARAMS,
+                    code=ResponseCode.PARAM_ERROR,
                     message="该邮箱未注册"
                 )
         
@@ -652,7 +702,7 @@ async def send_email(
         # 如果发送失败（超出限制），返回错误响应
         if not result.get("success", True):
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message=result.get("message", "发送失败")
             )
         
@@ -725,7 +775,7 @@ async def register_by_email(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -776,7 +826,7 @@ async def login_by_email(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -831,7 +881,7 @@ async def reset_password_by_email(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -864,7 +914,7 @@ async def verify_and_reset_password(
                 邮箱=data.email
             )
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message=verify_result.get("message", "验证码验证失败")
             )
         
@@ -882,7 +932,7 @@ async def verify_and_reset_password(
                 邮箱=data.email
             )
             return ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message="用户不存在"
             )
             
@@ -924,7 +974,7 @@ async def verify_and_reset_password(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -975,7 +1025,7 @@ async def update_email(
             错误信息=str(e)
         )
         return ErrorResponse.create(
-            code=ResponseCode.INVALID_PARAMS,
+            code=ResponseCode.PARAM_ERROR,
             message=str(e)
         )
 
@@ -1099,7 +1149,7 @@ async def update_user_level(
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse.create(
-                code=ResponseCode.INVALID_PARAMS,
+                code=ResponseCode.PARAM_ERROR,
                 message=str(e)
             ).dict()
         )
@@ -1122,4 +1172,98 @@ async def search_users(
     """搜索用户"""
     service = AuthService(db)
     users = await service.search_users(keyword, current_user["id"])
-    return users 
+    return users
+
+@router.put("/files/status", response_model=AuthSimpleSuccessResponse)
+async def update_file_status(
+    request: Request,
+    data: UpdateFileStatusRequest,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(require_admin)
+):
+    """更新文件状态（需要level=5权限）"""
+    try:
+        APILogger.log_request(
+            "更新文件状态",
+            操作者ID=current_user["id"],
+            文件名=data.filename,
+            新状态=data.new_status,
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
+        result = await auth_service.update_file_status(
+            filename=data.filename,
+            new_status=data.new_status,
+            operator_id=current_user["id"],
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "更新文件状态",
+            操作者ID=current_user["id"],
+            文件名=data.filename,
+            新状态=data.new_status,
+            操作结果="成功"
+        )
+        
+        return AuthSimpleSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="文件状态更新成功",
+            data=result["data"]
+        )
+    except ValueError as e:
+        APILogger.log_warning(
+            "更新文件状态",
+            "操作失败",
+            操作者ID=current_user["id"],
+            文件名=data.filename,
+            错误信息=str(e)
+        )
+        return ErrorResponse.create(
+            code=ResponseCode.PARAM_ERROR,
+            message=str(e)
+        )
+
+@router.get("/files/unaudited", response_model=SuccessResponse[FileListResponse])
+async def get_unaudited_files(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(require_admin)
+):
+    """获取所有未审核的文件（需要level=5权限）"""
+    try:
+        APILogger.log_request(
+            "获取未审核文件列表",
+            操作者ID=current_user["id"],
+            IP=request.client.host
+        )
+        
+        auth_service = AuthService(db)
+        result = await auth_service.get_unaudited_files(
+            operator_id=current_user["id"],
+            ip=request.client.host,
+            device_fingerprint=request.headers.get("User-Agent", "")
+        )
+        
+        APILogger.log_response(
+            "获取未审核文件列表",
+            操作者ID=current_user["id"],
+            文件数量=result["total"]
+        )
+        
+        return SuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取未审核文件列表成功",
+            data=result
+        )
+    except Exception as e:
+        APILogger.log_error("获取未审核文件列表", e, 操作者ID=current_user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"获取未审核文件列表失败: {str(e)}"
+            ).dict()
+        ) 

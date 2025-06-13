@@ -429,7 +429,7 @@ class ResponseCode(str, Enum):
     REGISTER_SUCCESS = "REGISTER_SUCCESS"  # 注册成功
 
     # 错误响应码
-    INVALID_PARAMS = "INVALID_PARAMS"      # 参数错误
+    PARAM_ERROR = "PARAM_ERROR"      # 参数错误
     UNAUTHORIZED = "UNAUTHORIZED"          # 未授权
     PERMISSION_DENIED = "PERMISSION_DENIED" # 权限不足
     RESOURCE_NOT_FOUND = "NOT_FOUND"      # 资源不存在
@@ -471,7 +471,7 @@ return AuthSuccessResponse.create(
 
 # 错误响应示例
 return ErrorResponse.create(
-    code=ResponseCode.INVALID_PARAMS,
+    code=ResponseCode.PARAM_ERROR,
     message="参数错误"
 )
 ```
@@ -585,7 +585,7 @@ class ResponseCode(str, Enum):
     CREATE_SUCCESS = "CREATE_SUCCESS"      # 创建成功
     UPDATE_SUCCESS = "UPDATE_SUCCESS"      # 更新成功
     DELETE_SUCCESS = "DELETE_SUCCESS"      # 删除成功
-    INVALID_PARAMS = "INVALID_PARAMS"      # 参数错误
+    PARAM_ERROR = "PARAM_ERROR"      # 参数错误
     UNAUTHORIZED = "UNAUTHORIZED"          # 未授权
     PERMISSION_DENIED = "PERMISSION_DENIED" # 权限不足
     RESOURCE_NOT_FOUND = "NOT_FOUND"      # 资源不存在
@@ -625,7 +625,7 @@ return AuthSuccessResponse.create(
 
 # 错误响应示例
 return ErrorResponse.create(
-    code=ResponseCode.INVALID_PARAMS,
+    code=ResponseCode.PARAM_ERROR,
     message="参数错误"
 )
 ```

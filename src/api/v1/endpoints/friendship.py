@@ -25,7 +25,7 @@ async def create_friend_request(
         APILogger.log_request(
             "发送好友请求",
             用户ID=current_user["id"],
-            目标用户ID=str(request.target_user_id),
+            目标用户ID=str(request.receiver_id),
             请求内容=request.dict()
         )
         
@@ -36,7 +36,7 @@ async def create_friend_request(
             "发送好友请求",
             用户ID=current_user["id"],
             操作结果="成功",
-            目标用户ID=str(request.target_user_id)
+            目标用户ID=str(request.receiver_id)
         )
         
         return {"message": "好友请求已发送"}
@@ -45,7 +45,7 @@ async def create_friend_request(
             "发送好友请求",
             "请求失败",
             用户ID=current_user["id"],
-            目标用户ID=str(request.target_user_id),
+            目标用户ID=str(request.receiver_id),
             错误信息=str(e)
         )
         raise HTTPException(status_code=400, detail=str(e))
@@ -54,7 +54,7 @@ async def create_friend_request(
             "发送好友请求",
             e,
             用户ID=current_user["id"],
-            目标用户ID=str(request.target_user_id)
+            目标用户ID=str(request.receiver_id)
         )
         raise HTTPException(status_code=500, detail=f"发送好友请求失败: {str(e)}")
 

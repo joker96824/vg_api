@@ -14,7 +14,7 @@ import logging
 import redis
 from config.settings import settings
 from src.core.services.captcha import CaptchaService
-from fastapi import Request
+from fastapi import Request, UploadFile
 from src.core.services.email import EmailService
 from uuid import UUID
 
@@ -226,7 +226,8 @@ class AuthService:
                 "id": str(user.id),
                 "mobile": user.mobile,
                 "nickname": user.nickname,
-                "level": user.level
+                "level": user.level,
+                "avatar": user.avatar
             },
             "token": token
         }
@@ -266,6 +267,7 @@ class AuthService:
             "mobile": user.mobile,
             "email": user.email,
             "nickname": user.nickname,
+            "avatar": user.avatar,
             "exp": datetime.utcnow() + timedelta(hours=expires_hours),
             "iat": datetime.utcnow()
         }
@@ -507,7 +509,8 @@ class AuthService:
                 "mobile": user.mobile,
                 "email": user.email,
                 "nickname": user.nickname,
-                "level": user.level
+                "level": user.level,
+                "avatar": user.avatar
             },
             "token": new_token,
             "expires_at": (datetime.utcnow() + timedelta(hours=40/60)).isoformat()
@@ -615,7 +618,7 @@ class AuthService:
     async def update_avatar(
         self,
         user_id: str,
-        avatar_url: str,
+        avatar: str,
         ip: str = "",
         device_fingerprint: str = ""
     ) -> Dict[str, Any]:
@@ -629,7 +632,7 @@ class AuthService:
             raise ValueError("用户不存在或已被删除")
             
         # 更新头像
-        user.avatar = avatar_url
+        user.avatar = avatar
         
         # 记录修改日志
         login_log = LoginLog(
@@ -647,7 +650,70 @@ class AuthService:
             "success": True,
             "message": "头像修改成功",
             "data": {
-                "avatar": avatar_url
+                "avatar": avatar
+            }
+        }
+
+    async def upload_avatar(
+        self,
+        user_id: str,
+        file: UploadFile,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """上传用户头像
+        
+        Args:
+            user_id: 用户ID
+            file: 上传的文件
+            ip: 用户IP
+            device_fingerprint: 设备指纹
+            
+        Returns:
+            Dict[str, Any]: 包含上传结果的字典
+        """
+        # 验证文件类型
+        if not file.content_type.startswith('image/'):
+            raise ValueError("只支持上传图片文件")
+            
+        # 验证文件大小（限制为2MB）
+        file_size = 0
+        chunk_size = 1024 * 1024  # 1MB
+        while chunk := await file.read(chunk_size):
+            file_size += len(chunk)
+            if file_size > 2 * 1024 * 1024:  # 2MB
+                raise ValueError("文件大小不能超过2MB")
+                
+        # 重置文件指针
+        await file.seek(0)
+        
+        # 生成文件名
+        file_ext = file.filename.split('.')[-1].lower()
+        if file_ext not in ['jpg', 'jpeg', 'png', 'gif']:
+            raise ValueError("只支持jpg、jpeg、png、gif格式的图片")
+            
+        # 生成唯一的文件名
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        filename = f"avatar_{user_id}_{timestamp}_Unaudited.{file_ext}"
+        
+        # 保存文件
+        avatar_dir = settings.AVATAR_DIR
+        os.makedirs(avatar_dir, exist_ok=True)
+        file_path = os.path.join(avatar_dir, filename)
+        
+        with open(file_path, 'wb') as f:
+            while chunk := await file.read(chunk_size):
+                f.write(chunk)
+                
+        # 生成访问URL
+        avatar_url = f"/image/avatars/{filename}"
+        
+        return {
+            "success": True,
+            "message": "头像上传成功",
+            "data": {
+                "filename": filename,
+                "url": avatar_url
             }
         }
 
@@ -819,7 +885,8 @@ class AuthService:
                 "id": str(user.id),
                 "email": user.email,
                 "nickname": user.nickname,
-                "level": user.level
+                "level": user.level,
+                "avatar": user.avatar
             },
             "token": token
         }
@@ -1074,4 +1141,147 @@ class AuthService:
         for user in users:
             user.id = str(user.id)
             
-        return users 
+        return users
+
+    async def update_file_status(
+        self,
+        filename: str,
+        new_status: str,
+        operator_id: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """更新文件状态
+        
+        Args:
+            filename: 文件名
+            new_status: 新状态（'Valid' 或 'Unvalid'）
+            operator_id: 操作者ID
+            ip: 操作者IP
+            device_fingerprint: 设备指纹
+            
+        Returns:
+            Dict[str, Any]: 包含操作结果的字典
+        """
+        # 验证文件名格式
+        if not '_Unaudited.' in filename:
+            raise ValueError("文件名格式不正确，必须包含_Unaudited.")
+            
+        # 验证新状态
+        if new_status not in ['Valid', 'Unvalid']:
+            raise ValueError("新状态必须是'Valid'或'Unvalid'")
+            
+        # 构建文件路径
+        avatar_dir = settings.AVATAR_DIR
+        old_path = os.path.join(avatar_dir, filename)
+        new_filename = filename.replace('_Unaudited.', f'_{new_status}.')
+        new_path = os.path.join(avatar_dir, new_filename)
+        
+        # 检查文件是否存在
+        if not os.path.exists(old_path):
+            raise ValueError("文件不存在")
+            
+        # 重命名文件
+        try:
+            os.rename(old_path, new_path)
+        except Exception as e:
+            raise ValueError(f"重命名文件失败：{str(e)}")
+            
+        # 如果是审核通过，更新用户头像
+        if new_status == 'Valid':
+            # 从文件名中提取用户ID
+            try:
+                user_id = filename.split('_')[1]  # avatar_userid_timestamp_Unaudited.ext
+                
+                # 查找用户
+                stmt = select(User).where(User.id == user_id, User.is_deleted == False)
+                result = await self.session.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    # 更新用户头像
+                    user.avatar = new_filename
+                    
+                    # 记录修改日志
+                    login_log = LoginLog(
+                        user_id=user.id,
+                        login_type=9,  # 修改头像
+                        ip=ip,
+                        device_info={"user_agent": device_fingerprint},
+                        status=1,  # 成功
+                        remark=f"头像已更新为 {new_filename}"
+                    )
+                    self.session.add(login_log)
+            except Exception as e:
+                logger.error(f"更新用户头像失败：{str(e)}")
+            
+        # 记录操作日志
+        login_log = LoginLog(
+            user_id=operator_id,
+            login_type=12,  # 文件状态更新
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"文件 {filename} 状态更新为 {new_status}"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "message": "文件状态更新成功",
+            "data": {
+                "old_filename": filename,
+                "new_filename": new_filename
+            }
+        }
+
+    async def get_unaudited_files(
+        self,
+        operator_id: str,
+        ip: str = "",
+        device_fingerprint: str = ""
+    ) -> Dict[str, Any]:
+        """获取所有未审核的文件
+        
+        Args:
+            operator_id: 操作者ID
+            ip: 操作者IP
+            device_fingerprint: 设备指纹
+            
+        Returns:
+            Dict[str, Any]: 包含未审核文件列表的字典
+        """
+        # 获取上传目录
+        avatar_dir = settings.AVATAR_DIR
+        
+        # 获取所有未审核的文件
+        unaudited_files = []
+        for filename in os.listdir(avatar_dir):
+            if '_Unaudited.' in filename:
+                file_path = os.path.join(avatar_dir, filename)
+                file_stat = os.stat(file_path)
+                unaudited_files.append({
+                    "filename": filename,
+                    "size": file_stat.st_size,
+                    "create_time": datetime.fromtimestamp(file_stat.st_ctime).isoformat(),
+                    "modify_time": datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+                })
+                
+        # 记录操作日志
+        login_log = LoginLog(
+            user_id=operator_id,
+            login_type=13,  # 获取未审核文件列表
+            ip=ip,
+            device_info={"user_agent": device_fingerprint},
+            status=1,  # 成功
+            remark=f"获取未审核文件列表，共 {len(unaudited_files)} 个文件"
+        )
+        self.session.add(login_log)
+        
+        await self.session.commit()
+        return {
+            "success": True,
+            "total": len(unaudited_files),
+            "items": unaudited_files
+        } 
