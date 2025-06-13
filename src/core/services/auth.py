@@ -695,7 +695,6 @@ class AuthService:
         # 生成唯一的文件名
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         filename = f"avatar_{user_id}_{timestamp}_Unaudited.{file_ext}"
-        avatar_filename = f"avatar_{user_id}_{timestamp}_Valid.{file_ext}"
         
         # 保存文件
         avatar_dir = settings.AVATAR_DIR
@@ -709,13 +708,14 @@ class AuthService:
         # 生成访问URL
         avatar_url = f"/image/avatars/{filename}"
         
-        # 更新用户头像
-        return await self.update_avatar(
-            user_id=user_id,
-            avatar=avatar_filename,
-            ip=ip,
-            device_fingerprint=device_fingerprint
-        )
+        return {
+            "success": True,
+            "message": "头像上传成功",
+            "data": {
+                "filename": filename,
+                "url": avatar_url
+            }
+        }
 
     def _hash_email(self, email: str) -> str:
         """邮箱哈希"""
@@ -1186,6 +1186,34 @@ class AuthService:
             os.rename(old_path, new_path)
         except Exception as e:
             raise ValueError(f"重命名文件失败：{str(e)}")
+            
+        # 如果是审核通过，更新用户头像
+        if new_status == 'Valid':
+            # 从文件名中提取用户ID
+            try:
+                user_id = filename.split('_')[1]  # avatar_userid_timestamp_Unaudited.ext
+                
+                # 查找用户
+                stmt = select(User).where(User.id == user_id, User.is_deleted == False)
+                result = await self.session.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    # 更新用户头像
+                    user.avatar = new_filename
+                    
+                    # 记录修改日志
+                    login_log = LoginLog(
+                        user_id=user.id,
+                        login_type=9,  # 修改头像
+                        ip=ip,
+                        device_info={"user_agent": device_fingerprint},
+                        status=1,  # 成功
+                        remark=f"头像已更新为 {new_filename}"
+                    )
+                    self.session.add(login_log)
+            except Exception as e:
+                logger.error(f"更新用户头像失败：{str(e)}")
             
         # 记录操作日志
         login_log = LoginLog(
