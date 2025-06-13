@@ -226,7 +226,8 @@ class AuthService:
                 "id": str(user.id),
                 "mobile": user.mobile,
                 "nickname": user.nickname,
-                "level": user.level
+                "level": user.level,
+                "avatar": user.avatar
             },
             "token": token
         }
@@ -266,6 +267,7 @@ class AuthService:
             "mobile": user.mobile,
             "email": user.email,
             "nickname": user.nickname,
+            "avatar": user.avatar,
             "exp": datetime.utcnow() + timedelta(hours=expires_hours),
             "iat": datetime.utcnow()
         }
@@ -507,7 +509,8 @@ class AuthService:
                 "mobile": user.mobile,
                 "email": user.email,
                 "nickname": user.nickname,
-                "level": user.level
+                "level": user.level,
+                "avatar": user.avatar
             },
             "token": new_token,
             "expires_at": (datetime.utcnow() + timedelta(hours=40/60)).isoformat()
@@ -882,7 +885,8 @@ class AuthService:
                 "id": str(user.id),
                 "email": user.email,
                 "nickname": user.nickname,
-                "level": user.level
+                "level": user.level,
+                "avatar": user.avatar
             },
             "token": token
         }
