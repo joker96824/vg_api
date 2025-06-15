@@ -31,12 +31,12 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
     获取数据库会话的依赖函数
     """
-    async with async_session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close() 
+    session = async_session_factory()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close() 

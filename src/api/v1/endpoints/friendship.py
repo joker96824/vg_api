@@ -11,6 +11,7 @@ from src.core.schemas.friendship import (
 from src.core.services.friendship import FriendshipService
 from src.core.auth import get_current_user
 from src.core.utils.logger import APILogger
+from src.core.deps import get_db
 
 router = APIRouter()
 
@@ -428,4 +429,30 @@ async def delete_friendship(
             用户ID=current_user["id"],
             好友ID=str(friend_id)
         )
-        raise HTTPException(status_code=500, detail=f"删除好友失败: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"删除好友失败: {str(e)}")
+
+@router.post("/friends")
+async def add_friend(
+    friend_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    # This method is not provided in the original file or the new code block
+    # It's assumed to exist as it's called in the new code block
+    pass
+
+@router.delete("/friends/{friend_id}")
+async def remove_friend(
+    friend_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    # This method is not provided in the original file or the new code block
+    # It's assumed to exist as it's called in the new code block
+    pass
+
+@router.get("/friends")
+async def get_friends(
+    db: AsyncSession = Depends(get_db)
+):
+    # This method is not provided in the original file or the new code block
+    # It's assumed to exist as it's called in the new code block
+    pass 

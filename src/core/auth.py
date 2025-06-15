@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.database import get_session
+from src.core.deps import get_db
 from src.core.models.user import User
 import os
 
@@ -13,7 +13,7 @@ security = HTTPBearer()
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ) -> dict:
     """获取当前用户信息"""
     try:

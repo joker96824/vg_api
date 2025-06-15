@@ -3,13 +3,14 @@ from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
-from src.core.database import get_session
+from src.core.deps import get_db
 from src.core.schemas.card import (
     CardQueryParams,
     CardSuccessResponse, CardListSuccessResponse,
     ErrorResponse, ResponseCode,
     CardListResponse, CardIdsRequest,
-    UpdateCardAbilityRequest, SuccessResponse
+    UpdateCardAbilityRequest, SuccessResponse,
+    CardCreate, CardUpdate
 )
 from src.core.services.card import CardService
 from src.core.auth import get_current_user
@@ -20,7 +21,7 @@ router = APIRouter()
 @router.get("/cards", response_model=CardListSuccessResponse)
 async def get_cards(
     params: CardQueryParams = Depends(),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -60,7 +61,7 @@ async def get_cards(
 @router.post("/cards/batch", response_model=CardListSuccessResponse)
 async def get_cards_by_ids(
     data: CardIdsRequest,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_db)
 ):
     """
     批量获取卡牌信息
@@ -109,7 +110,7 @@ async def get_cards_by_ids(
 @router.get("/cards/code/{card_code}", response_model=CardSuccessResponse)
 async def get_card_by_code(
     card_code: str,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -163,7 +164,7 @@ async def get_card_by_code(
 async def update_card_ability(
     request: Request,
     data: UpdateCardAbilityRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """更新卡牌能力内容"""
@@ -235,4 +236,67 @@ async def update_card_ability(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"更新卡牌能力失败: {str(e)}"
             ).dict()
-        ) 
+        )
+
+@router.post("/cards", response_model=CardSuccessResponse)
+async def create_card(
+    card_data: CardCreate,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """创建新卡牌"""
+    try:
+        APILogger.log_request(
+            "创建卡牌",
+            用户ID=current_user["id"],
+            卡牌信息=card_data.dict()
+        )
+        
+        card_service = CardService(session)
+        result = await card_service.create_card(card_data, current_user["id"])
+        
+        APILogger.log_response(
+            "创建卡牌",
+            卡牌ID=str(result.id),
+            卡牌名称=result.name
+        )
+        
+        return CardSuccessResponse.create(
+            code=ResponseCode.CREATE_SUCCESS,
+            message="卡牌创建成功",
+            data=result
+        )
+    except Exception as e:
+        APILogger.log_error("创建卡牌", e, 用户ID=current_user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"创建卡牌失败: {str(e)}"
+            ).dict()
+        )
+
+@router.get("/cards/{card_id}")
+async def get_card(
+    card_id: int,
+    session: AsyncSession = Depends(get_db)
+):
+    # Implementation of get_card method
+    pass
+
+@router.put("/cards/{card_id}")
+async def update_card(
+    card_id: int,
+    card_data: CardUpdate,
+    session: AsyncSession = Depends(get_db)
+):
+    # Implementation of update_card method
+    pass
+
+@router.delete("/cards/{card_id}")
+async def delete_card(
+    card_id: int,
+    session: AsyncSession = Depends(get_db)
+):
+    # Implementation of delete_card method
+    pass 

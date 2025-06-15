@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.database import get_session
+from src.core.deps import get_db
 from src.core.schemas.deck import (
     DeckCreate, DeckUpdate, DeckInDB, 
     DeckCardCreate, DeckQueryParams,
@@ -24,7 +24,7 @@ router = APIRouter()
 @router.post("/decks", response_model=DeckSuccessResponse, summary="创建卡组")
 async def create_deck(
     deck: DeckCreate,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """创建新卡组"""
@@ -63,7 +63,7 @@ async def create_deck(
 @router.get("/decks/{deck_id}", response_model=DeckSuccessResponse, summary="获取卡组详情")
 async def get_deck(
     deck_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """获取指定卡组的详细信息"""
@@ -131,7 +131,7 @@ async def get_deck(
 
 @router.get("/decks", response_model=DeckListSuccessResponse, summary="获取卡组列表")
 async def get_decks(
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
     only_preset: bool = Query(False, description="是否只返回预设卡组")
 ):
@@ -182,7 +182,7 @@ async def get_decks(
 async def update_deck(
     deck_id: UUID,
     deck: DeckUpdate,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """更新指定卡组的信息和卡片列表"""
@@ -278,7 +278,7 @@ async def update_deck(
 @router.delete("/decks/{deck_id}", response_model=DeleteSuccessResponse, summary="删除卡组")
 async def delete_deck(
     deck_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """删除指定卡组（软删除）"""
@@ -364,7 +364,7 @@ async def update_deck_info(
     deck_id: UUID,
     deck_name: str = Body(None, description="新的卡组名称"),
     deck_description: str = Body(None, description="新的卡组描述"),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """更新卡组的名称和描述"""
@@ -439,7 +439,7 @@ async def update_deck_info(
 async def update_deck_preset(
     deck_id: UUID,
     preset_update: DeckPresetUpdate,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -513,7 +513,7 @@ async def update_deck_preset(
 @router.post("/decks/{deck_id}/copy", response_model=DeckSuccessResponse, summary="复制卡组")
 async def copy_deck(
     deck_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """复制指定卡组"""
@@ -567,7 +567,7 @@ async def copy_deck(
 @router.get("/decks/{deck_id}/validity", response_model=DeckValiditySuccessResponse)
 async def check_deck_validity(
     deck_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """

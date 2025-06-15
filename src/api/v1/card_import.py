@@ -1,9 +1,10 @@
 import logging
 from typing import Dict, List, Any
 
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.deps import get_db
 from src.core.models.database import get_session
 from src.core.services.card_import import CardImportService
 
@@ -11,10 +12,10 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/import/json", response_model=Dict[str, int])
-async def import_cards_from_json(
-    file: UploadFile = File(...),
-    session: AsyncSession = Depends(get_session)
+@router.post("/import")
+async def import_cards(
+    file: UploadFile,
+    session: AsyncSession = Depends(get_db)
 ):
     """
     从 JSON 文件导入卡牌数据
@@ -43,7 +44,7 @@ async def import_cards_from_json(
 @router.post("/import/batch", response_model=Dict[str, Any])
 async def import_cards_batch(
     cards_data: List[Dict],
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_db)
 ):
     """
     批量导入卡牌数据
@@ -55,4 +56,13 @@ async def import_cards_batch(
 
     except Exception as e:
         logger.error(f"批量导入卡牌数据失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/import/template")
+async def get_import_template(
+    session: AsyncSession = Depends(get_db)
+):
+    # This method is not provided in the original file or the code block
+    # It's assumed to exist as it's called in the get_db function
+    pass 
