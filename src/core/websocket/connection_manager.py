@@ -4,8 +4,7 @@ from datetime import datetime, timedelta
 import logging
 import asyncio
 import json
-import redis
-from config.settings import settings
+from src.core.utils.redis import RedisManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,29 +16,10 @@ class ConnectionManager:
         self._heartbeat_task = None
         self._redis_sub_task = None
         
-        # 初始化 Redis 连接
-        try:
-            logger.info("初始化 Redis 连接")
-            self.redis = redis.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                password=settings.REDIS_PASSWORD,
-                db=settings.REDIS_DB,
-                decode_responses=True,
-                socket_timeout=5,
-                socket_connect_timeout=5,
-                retry_on_timeout=True
-            )
-            # 测试连接
-            self.redis.ping()
-            logger.info("Redis 连接成功")
-            
-            # 初始化 pubsub
-            self.pubsub = self.redis.pubsub()
-            logger.info("Redis pubsub 初始化成功")
-        except Exception as e:
-            logger.error(f"Redis 连接初始化失败: {str(e)}")
-            raise
+        # 使用共享的 Redis 连接
+        redis_manager = RedisManager()
+        self.redis = redis_manager.get_redis()
+        self.pubsub = redis_manager.get_pubsub()
         
     async def start_heartbeat(self):
         """启动心跳检测任务"""
