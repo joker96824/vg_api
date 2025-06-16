@@ -1,14 +1,71 @@
 from typing import Dict, Any, Optional, List
 from fastapi import WebSocket
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 class ConnectionManager:
     def __init__(self):
         self.connections: Dict[str, Dict[str, Any]] = {}
+        self.heartbeat_interval = 30  # 心跳间隔（秒）
+        self.connection_timeout = 120  # 连接超时时间（秒）
+        self._heartbeat_task = None
         
+    async def start_heartbeat(self):
+        """启动心跳检测任务"""
+        if self._heartbeat_task is None:
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+            
+    async def stop_heartbeat(self):
+        """停止心跳检测任务"""
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
+            
+    async def _heartbeat_loop(self):
+        """心跳检测循环"""
+        while True:
+            try:
+                await self._check_connections()
+                await asyncio.sleep(self.heartbeat_interval)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"心跳检测时发生错误: {str(e)}")
+                
+    async def _check_connections(self):
+        """检查并清理超时连接"""
+        now = datetime.utcnow()
+        to_remove = []
+        
+        for user_id, conn in self.connections.items():
+            # 检查最后活动时间
+            if (now - conn["last_activity"]).total_seconds() > self.connection_timeout:
+                to_remove.append(user_id)
+                continue
+                
+            # 发送心跳包
+            try:
+                await self.send_message(conn["websocket"], {
+                    "type": "ping",
+                    "timestamp": now.isoformat()
+                })
+            except Exception as e:
+                logger.error(f"发送心跳包给用户 {user_id} 时发生错误: {str(e)}")
+                to_remove.append(user_id)
+                
+        # 清理超时连接
+        for user_id in to_remove:
+            try:
+                websocket = self.connections[user_id]["websocket"]
+                await websocket.close()
+                del self.connections[user_id]
+                logger.info(f"清理超时连接: 用户 {user_id}")
+            except Exception as e:
+                logger.error(f"清理连接时发生错误: {str(e)}")
+                
     async def connect(self, websocket: WebSocket, user_id: str) -> None:
         """
         添加新的WebSocket连接

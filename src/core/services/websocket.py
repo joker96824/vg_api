@@ -8,6 +8,7 @@ from src.core.websocket.connection_manager import ConnectionManager
 from src.core.models.user import User
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,11 @@ class WebSocketService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.manager = ConnectionManager()
+        self._start_heartbeat()
+        
+    def _start_heartbeat(self):
+        """启动心跳检测"""
+        asyncio.create_task(self.manager.start_heartbeat())
         
     async def handle_connect(self, websocket: WebSocket) -> None:
         """
@@ -59,6 +65,9 @@ class WebSocketService:
                 await self._handle_chat(websocket, message)
             elif message_type == "ping":
                 await self._handle_ping(websocket)
+            elif message_type == "pong":
+                # 处理心跳响应，只需要更新活动时间
+                self.manager.update_activity(websocket)
             else:
                 await self._send_error(websocket, f"未知的消息类型: {message_type}")
                 
