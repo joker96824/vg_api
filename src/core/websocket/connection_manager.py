@@ -165,16 +165,33 @@ class ConnectionManager:
             if "timestamp" not in message:
                 message["timestamp"] = datetime.utcnow().isoformat()
                 
+            # 记录开始广播
+            logger.info(f"开始广播消息: {message.get('type')} - {message.get('content', '')}")
+            
+            # 记录接收者列表
+            receivers = []
+            failed_receivers = []
+            
             for user_id, conn in self.connections.items():
                 if exclude_user_id and user_id == exclude_user_id:
+                    logger.info(f"排除用户 {user_id} 的广播")
                     continue
                     
                 try:
                     await conn["websocket"].send_json(message)
+                    receivers.append(user_id)
                 except Exception as e:
                     logger.error(f"广播消息给用户 {user_id} 时发生错误: {str(e)}")
+                    failed_receivers.append(user_id)
                     
-            logger.info(f"广播消息成功: {message}")
+            # 记录广播结果
+            logger.info(
+                f"广播消息完成: "
+                f"类型={message.get('type')}, "
+                f"成功发送给 {len(receivers)} 个用户: {', '.join(receivers)}, "
+                f"失败 {len(failed_receivers)} 个用户: {', '.join(failed_receivers) if failed_receivers else '无'}"
+            )
+            
         except Exception as e:
             logger.error(f"广播消息时发生错误: {str(e)}")
             
