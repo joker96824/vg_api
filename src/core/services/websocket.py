@@ -16,11 +16,20 @@ class WebSocketService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.manager = ConnectionManager()
+        logger.info("WebSocket 服务初始化")
         self._start_heartbeat()
+        self._start_redis_subscriber()
+        logger.info("WebSocket 服务初始化完成")
         
     def _start_heartbeat(self):
         """启动心跳检测"""
+        logger.info("启动心跳检测")
         asyncio.create_task(self.manager.start_heartbeat())
+        
+    def _start_redis_subscriber(self):
+        """启动 Redis 订阅"""
+        logger.info("启动 Redis 订阅")
+        asyncio.create_task(self.manager.start_redis_subscriber())
         
     async def handle_connect(self, websocket: WebSocket) -> None:
         """
