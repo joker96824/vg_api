@@ -183,21 +183,14 @@ class WebSocketService:
             # 如果有接收者，发送私聊消息
             if "receiver_id" in message:
                 receiver_id = message["receiver_id"]
-                # 检查接收者是否在线
-                if not self.manager.is_user_online(receiver_id):
-                    await self._send_error(websocket, "接收者不在线")
+                # 发送私聊消息
+                success = await self.manager.send_private_message(receiver_id, chat_message)
+                if not success:
+                    await self._send_error(websocket, "发送私聊消息失败")
                     return
                     
-                # 发送私聊消息
-                await self.manager.send_message(
-                    self.manager.connections[receiver_id]["websocket"],
-                    chat_message
-                )
                 # 同时发送给发送者（回显）
-                await self.manager.send_message(
-                    sender_id,
-                    chat_message
-                )
+                await self.manager.send_message(websocket, chat_message)
             else:
                 # 广播消息给所有在线用户
                 await self.manager.broadcast(chat_message)

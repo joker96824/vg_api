@@ -42,21 +42,23 @@ class ConnectionManager:
     async def _redis_sub_loop(self):
         """Redis 订阅循环"""
         try:
-            logger.info("开始订阅 Redis 频道: websocket_broadcast")
-            # 使用同步方式订阅
-            self.pubsub.subscribe('websocket_broadcast')
+            logger.info("开始订阅 Redis 频道: websocket_broadcast, websocket_private")
+            # 订阅广播和私聊频道
+            self.pubsub.subscribe('websocket_broadcast', 'websocket_private')
             logger.info("Redis 订阅成功")
             
             while True:
                 try:
-                    # 使用同步方式获取消息
                     message = self.pubsub.get_message(ignore_subscribe_messages=True)
                     
                     if message and message['type'] == 'message':
                         logger.info(f"收到 Redis 消息: {message['data']}")
-                        data = json.loads(message['data'])
+                        # 添加频道信息到消息数据中
+                        data = {
+                            'channel': message['channel'],
+                            'data': json.loads(message['data'])
+                        }
                         await self._handle_redis_message(data)
-                    # 使用 asyncio.sleep 而不是直接 sleep
                     await asyncio.sleep(0.1)
                 except asyncio.CancelledError:
                     logger.info("Redis 订阅任务被取消")
@@ -70,15 +72,39 @@ class ConnectionManager:
     async def _handle_redis_message(self, data: Dict[str, Any]):
         """处理从 Redis 接收到的消息"""
         try:
-            message = data.get('message')
-            exclude_user_id = data.get('exclude_user_id')
+            # 获取消息来源频道
+            channel = data.get('channel')
+            message_data = data.get('data', {})
             
-            if message:
-                logger.info(f"处理 Redis 消息: 类型={message.get('type')}, 内容={message.get('content', '')}, 排除用户={exclude_user_id}")
-                # 在本地广播消息
-                await self._local_broadcast(message, exclude_user_id)
-            else:
-                logger.warning("收到空的 Redis 消息")
+            if channel == 'websocket_broadcast':
+                # 处理广播消息
+                message = message_data.get('message')
+                exclude_user_id = message_data.get('exclude_user_id')
+                
+                if message:
+                    logger.info(f"处理广播消息: 类型={message.get('type')}, 内容={message.get('content', '')}, 排除用户={exclude_user_id}")
+                    await self._local_broadcast(message, exclude_user_id)
+                else:
+                    logger.warning("收到空的广播消息")
+                    
+            elif channel == 'websocket_private':
+                # 处理私聊消息
+                target_user_id = message_data.get('target_user_id')
+                message = message_data.get('message')
+                
+                if target_user_id and message:
+                    logger.info(f"处理私聊消息: 目标用户={target_user_id}, 类型={message.get('type')}")
+                    if target_user_id in self.connections:
+                        await self.send_message(
+                            self.connections[target_user_id]["websocket"],
+                            message
+                        )
+                        logger.info(f"私聊消息已发送给用户 {target_user_id}")
+                    else:
+                        logger.info(f"用户 {target_user_id} 不在当前实例")
+                else:
+                    logger.warning("收到无效的私聊消息")
+                    
         except Exception as e:
             logger.error(f"处理 Redis 消息时发生错误: {str(e)}")
             
@@ -270,6 +296,39 @@ class ConnectionManager:
             return True
         except Exception as e:
             logger.error(f"发送消息时发生错误: {str(e)}")
+            return False
+            
+    async def send_private_message(self, target_user_id: str, message: Dict[str, Any]) -> bool:
+        """
+        发送私聊消息给指定用户
+        
+        Args:
+            target_user_id: 目标用户ID
+            message: 要发送的消息
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            # 检查目标用户是否在当前实例
+            if target_user_id in self.connections:
+                # 用户在当前实例，直接发送
+                logger.info(f"用户 {target_user_id} 在当前实例，直接发送消息")
+                return await self.send_message(
+                    self.connections[target_user_id]["websocket"],
+                    message
+                )
+            else:
+                # 用户不在当前实例，通过Redis发送
+                logger.info(f"用户 {target_user_id} 不在当前实例，通过Redis发送消息")
+                self.redis.publish('websocket_private', json.dumps({
+                    'target_user_id': target_user_id,
+                    'message': message
+                }))
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送私聊消息时发生错误: {str(e)}")
             return False
             
     def get_connection_count(self) -> int:
