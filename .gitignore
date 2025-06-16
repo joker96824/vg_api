@@ -103,3 +103,6 @@ dmypy.json
 
 # Project specific
 .cursor/
+
+
+scripts/deploy.sh
