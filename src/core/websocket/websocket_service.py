@@ -4,11 +4,12 @@ from datetime import datetime
 from fastapi import WebSocket
 from jose import jwt, JWTError
 import os
-from src.core.websocket.connection_manager import ConnectionManager
+from .connection_manager import ConnectionManager
 from src.core.models.user import User
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
+from .services.chat.handler import ChatMessageHandler
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ class WebSocketService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.manager = ConnectionManager()
+        self.chat_handler = ChatMessageHandler(self.manager, self.session)
         logger.info("WebSocket 服务初始化")
         self._start_heartbeat()
         self._start_redis_subscriber()
@@ -156,33 +158,15 @@ class WebSocketService:
             message: 聊天消息
         """
         try:
-            # 获取发送者信息
-            sender_id = self.manager.get_user_id(websocket)
-            if not sender_id:
-                await self._send_error(websocket, "未认证的连接")
+            # 使用聊天处理器处理消息
+            success, chat_message, receiver_id = await self.chat_handler.handle_message(websocket, message)
+            
+            if not success:
+                await self._send_error(websocket, chat_message)  # chat_message 在这里是错误信息
                 return
                 
-            # 获取发送者详细信息
-            stmt = select(User).where(User.id == sender_id)
-            result = await self.session.execute(stmt)
-            sender = result.scalar_one_or_none()
-            if not sender:
-                await self._send_error(websocket, "发送者不存在")
-                return
-
-            # 构建消息内容
-            chat_message = {
-                "type": "chat",
-                "sender_id": str(sender_id),
-                "sender_name": sender.nickname,
-                "sender_avatar": sender.avatar,
-                "content": message.get("content", ""),
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # 如果有接收者，发送私聊消息
-            if "receiver_id" in message:
-                receiver_id = message["receiver_id"]
+            # 处理消息发送
+            if receiver_id:
                 # 发送私聊消息
                 success = await self.manager.send_private_message(receiver_id, chat_message)
                 if not success:
