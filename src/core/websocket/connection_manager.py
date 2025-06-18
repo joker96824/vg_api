@@ -9,7 +9,20 @@ from .redis import RedisConnection, RedisSubscriber, RedisPublisher, RedisMessag
 logger = logging.getLogger(__name__)
 
 class ConnectionManager:
+    _instance: Optional['ConnectionManager'] = None
+    
+    def __new__(cls):
+        """单例模式，确保整个应用只有一个ConnectionManager实例"""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
     def __init__(self):
+        """初始化连接管理器"""
+        if self._initialized:
+            return
+            
         self.connections: Dict[str, Dict[str, Any]] = {}
         self.heartbeat_interval = 30  # 心跳间隔（秒）
         self.connection_timeout = 120  # 连接超时时间（秒）
@@ -26,6 +39,9 @@ class ConnectionManager:
         )
         # 创建Redis发布器
         self.redis_publisher = RedisPublisher(self.redis_connection)
+        
+        self._initialized = True
+        logger.info("ConnectionManager 单例初始化完成")
         
     async def start_heartbeat(self):
         """启动心跳检测任务"""

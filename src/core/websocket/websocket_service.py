@@ -16,12 +16,18 @@ logger = logging.getLogger(__name__)
 class WebSocketService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.manager = ConnectionManager()
+        self.manager = ConnectionManager()  # 现在是单例
         self.chat_handler = ChatMessageHandler(self.manager, self.session)
         logger.info("WebSocket 服务初始化")
-        self._start_heartbeat()
-        self._start_redis_subscriber()
-        logger.info("WebSocket 服务初始化完成")
+        
+        # 只在第一次创建时启动心跳和订阅
+        if not hasattr(self.manager, '_services_started'):
+            self._start_heartbeat()
+            self._start_redis_subscriber()
+            self.manager._services_started = True
+            logger.info("WebSocket 服务初始化完成")
+        else:
+            logger.info("WebSocket 服务已存在，跳过重复初始化")
         
     def _start_heartbeat(self):
         """启动心跳检测"""

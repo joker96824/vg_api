@@ -101,6 +101,10 @@ class RedisMessageHandler:
             # 记录开始广播
             logger.info(f"开始本地广播消息: {message.get('type')} - {message.get('content', '')}")
             
+            # 记录当前连接数
+            total_connections = len(self.connection_manager.connections)
+            logger.info(f"当前连接数: {total_connections}")
+            
             # 记录接收者列表
             receivers = []
             failed_receivers = []
@@ -111,8 +115,12 @@ class RedisMessageHandler:
                     continue
                     
                 try:
-                    await conn["websocket"].send_json(message)
+                    # 检查连接状态
+                    websocket = conn["websocket"]
+                    logger.debug(f"尝试发送消息给用户 {user_id}")
+                    await websocket.send_json(message)
                     receivers.append(user_id)
+                    logger.debug(f"成功发送消息给用户 {user_id}")
                 except Exception as e:
                     logger.error(f"广播消息给用户 {user_id} 时发生错误: {str(e)}")
                     failed_receivers.append(user_id)
