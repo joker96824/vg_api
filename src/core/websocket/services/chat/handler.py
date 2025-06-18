@@ -90,7 +90,7 @@ class ChatMessageHandler:
         Returns:
             Dict[str, Any]: 构建好的聊天消息
         """
-        return {
+        chat_message = {
             "type": "chat",
             "sender_id": str(sender_id),
             "sender_name": sender.nickname,
@@ -98,6 +98,15 @@ class ChatMessageHandler:
             "content": message.get("content", ""),
             "timestamp": datetime.now().isoformat()
         }
+        
+        # 如果是私聊消息，添加receiver_id
+        if "receiver_id" in message:
+            chat_message["receiver_id"] = message["receiver_id"]
+            chat_message["chat_type"] = "private"
+        else:
+            chat_message["chat_type"] = "world"
+            
+        return chat_message
         
     async def _process_message_sending(self, websocket: WebSocket, chat_message: Dict[str, Any], original_message: Dict[str, Any]) -> None:
         """
