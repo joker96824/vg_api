@@ -47,6 +47,23 @@ class RoomPlayerResponse(RoomPlayerInDB):
     user: Optional[Dict[str, Any]] = Field(None, description="用户信息")
     deck: Optional[Dict[str, Any]] = Field(None, description="卡组信息")
 
+class RoomPlayerDetailResponse(BaseModel):
+    """房间玩家详细信息响应模型"""
+    id: UUID = Field(..., description="玩家记录ID")
+    room_id: UUID = Field(..., description="房间ID")
+    user_id: UUID = Field(..., description="用户ID")
+    player_order: int = Field(..., description="玩家顺序")
+    status: str = Field(..., description="玩家状态")
+    deck_id: Optional[UUID] = Field(None, description="使用的卡组ID")
+    join_time: datetime = Field(..., description="加入时间")
+    leave_time: Optional[datetime] = Field(None, description="离开时间")
+    remark: str = Field(..., description="备注信息")
+    user_info: Optional[Dict[str, Any]] = Field(None, description="用户信息")
+    deck_info: Optional[Dict[str, Any]] = Field(None, description="卡组信息")
+
+    class Config:
+        from_attributes = True
+
 # 查询参数模型
 class RoomQueryParams(BaseModel):
     """房间查询参数模型"""
@@ -126,9 +143,18 @@ class RoomPlayerListResponse(BaseModel):
     total: int = Field(..., description="总记录数")
     items: List[RoomPlayerInDB] = Field(..., description="房间玩家列表")
 
+class RoomPlayersResponse(BaseModel):
+    """房间玩家信息响应模型"""
+    room_id: UUID = Field(..., description="房间ID")
+    room_name: str = Field(..., description="房间名称")
+    total_players: int = Field(..., description="总玩家数")
+    max_players: int = Field(..., description="最大玩家数")
+    players: List[RoomPlayerDetailResponse] = Field(..., description="玩家列表")
+
 # 定义具体的响应类型
 RoomSuccessResponse = SuccessResponse[RoomInDB]
 RoomListSuccessResponse = SuccessResponse[RoomListResponse]
 RoomPlayerSuccessResponse = SuccessResponse[RoomPlayerInDB]
 RoomPlayerListSuccessResponse = SuccessResponse[RoomPlayerListResponse]
+RoomPlayersSuccessResponse = SuccessResponse[RoomPlayersResponse]
 DeleteSuccessResponse = SuccessResponse[DeleteResponse] 

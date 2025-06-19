@@ -281,6 +281,86 @@ class RoomService:
         max_order = result.scalar()
         return (max_order or 0) + 1
 
+    async def get_room_players_info(self, room_id: UUID) -> Optional[Dict[str, Any]]:
+        """获取房间玩家详细信息"""
+        try:
+            logger.info(f"获取房间玩家信息 - room_id: {room_id}")
+            
+            # 获取房间信息
+            room = await self.get_room(room_id)
+            if not room:
+                logger.warning(f"房间不存在 - room_id: {room_id}")
+                return None
+            
+            # 获取房间玩家列表，包含用户和卡组信息
+            result = await self.db.execute(
+                select(RoomPlayer)
+                .options(
+                    selectinload(RoomPlayer.user),
+                    selectinload(RoomPlayer.deck)
+                )
+                .where(
+                    and_(
+                        RoomPlayer.room_id == room_id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+                .order_by(RoomPlayer.player_order)
+            )
+            room_players = result.scalars().all()
+            
+            # 构建玩家详细信息
+            players_info = []
+            for player in room_players:
+                player_info = {
+                    "id": player.id,
+                    "room_id": player.room_id,
+                    "user_id": player.user_id,
+                    "player_order": player.player_order,
+                    "status": player.status,
+                    "deck_id": player.deck_id,
+                    "join_time": player.join_time,
+                    "leave_time": player.leave_time,
+                    "remark": player.remark,
+                    "user_info": None,
+                    "deck_info": None
+                }
+                
+                # 添加用户信息
+                if player.user:
+                    player_info["user_info"] = {
+                        "id": str(player.user.id),
+                        "nickname": player.user.nickname,
+                        "avatar": player.user.avatar
+                    }
+                
+                # 添加卡组信息
+                if player.deck:
+                    player_info["deck_info"] = {
+                        "id": str(player.deck.id),
+                        "deck_name": player.deck.deck_name,
+                        "deck_description": player.deck.deck_description,
+                        "is_valid": player.deck.is_valid
+                    }
+                
+                players_info.append(player_info)
+            
+            # 构建返回结果
+            result_data = {
+                "room_id": str(room.id),
+                "room_name": room.room_name,
+                "total_players": len(players_info),
+                "max_players": room.max_players,
+                "players": players_info
+            }
+            
+            logger.info(f"获取房间玩家信息成功 - room_id: {room_id}, 玩家数: {len(players_info)}")
+            return result_data
+            
+        except Exception as e:
+            logger.error(f"获取房间玩家信息失败 - room_id: {room_id}, 错误: {str(e)}")
+            raise ValueError(f"获取房间玩家信息失败: {str(e)}")
+
 
 class RoomPlayerService:
     """房间玩家服务"""

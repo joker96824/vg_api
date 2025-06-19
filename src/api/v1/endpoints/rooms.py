@@ -10,6 +10,7 @@ from src.core.schemas.room import (
     RoomQueryParams, RoomPlayerQueryParams,
     RoomSuccessResponse, RoomListSuccessResponse,
     RoomPlayerSuccessResponse, RoomPlayerListSuccessResponse,
+    RoomPlayersSuccessResponse,
     DeleteSuccessResponse, DeleteResponse,
     ResponseCode, ErrorResponse, RoomCreateRequest
 )
@@ -492,5 +493,59 @@ async def leave_room(
             detail=ErrorResponse.create(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"离开房间失败: {str(e)}"
+            ).dict()
+        )
+
+
+@router.get("/rooms/{room_id}/players", response_model=RoomPlayersSuccessResponse, summary="获取房间玩家信息")
+async def get_room_players(
+    room_id: UUID,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """获取指定房间的玩家详细信息"""
+    try:
+        APILogger.log_request(
+            "获取房间玩家信息",
+            用户ID=current_user["id"],
+            房间ID=str(room_id)
+        )
+        
+        room_service = RoomService(session)
+        result = await room_service.get_room_players_info(room_id)
+        
+        if not result:
+            APILogger.log_warning(
+                "获取房间玩家信息",
+                "房间不存在",
+                房间ID=str(room_id)
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.NOT_FOUND,
+                    message="房间不存在"
+                ).dict()
+            )
+            
+        APILogger.log_response(
+            "获取房间玩家信息",
+            房间ID=str(room_id),
+            房间名称=result["room_name"],
+            玩家数量=result["total_players"]
+        )
+        
+        return RoomPlayersSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取房间玩家信息成功",
+            data=result
+        )
+    except Exception as e:
+        APILogger.log_error("获取房间玩家信息", e, 用户ID=current_user["id"], 房间ID=str(room_id))
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"获取房间玩家信息失败: {str(e)}"
             ).dict()
         ) 
