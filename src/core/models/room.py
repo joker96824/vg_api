@@ -17,6 +17,7 @@ class Room(Base):
     current_players = Column(Integer, nullable=False, default=0, comment="当前玩家数")
     game_mode = Column(String(50), default="standard", comment="游戏模式：standard-标准, draft-轮抽, sealed-现开")
     game_settings = Column(JSON, default={}, comment="游戏设置JSON，包含时间限制、规则等")
+    pass_word = Column(String(100), nullable=True, comment="房间密码，私密房间使用")
     created_by = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="创建者ID")
     create_user_id = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="创建用户ID")
     update_user_id = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="更新用户ID")

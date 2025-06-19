@@ -22,7 +22,7 @@ class RoomPlayer(Base):
     create_time = Column(DateTime(timezone=True), default=datetime.utcnow, comment="创建时间")
     update_time = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
     is_deleted = Column(Boolean, default=False, comment="是否删除")
-    remark = Column(Text, comment="备注")
+    remark = Column(Text, default="", comment="备注")
     
     # 唯一约束
     __table_args__ = (
