@@ -6,7 +6,7 @@ from sqlalchemy import Boolean, String, Integer, Text, ForeignKey, Index, DateTi
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from .database import Base
+from src.core.database import Base
 
 
 class Deck(Base):
@@ -14,8 +14,7 @@ class Deck(Base):
     __tablename__ = "deck"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, server_default=func.gen_random_uuid())
-    # user_id: Mapped[UUID] = mapped_column(ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("User.id", ondelete="CASCADE"), nullable=False, index=True)
     deck_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
     deck_description: Mapped[Optional[str]] = mapped_column(Text)
     is_valid: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -29,8 +28,9 @@ class Deck(Base):
     remark: Mapped[str] = mapped_column(Text, default="")
 
     # 关系定义
-    # user = relationship("User", back_populates="decks")
+    user = relationship("User", back_populates="decks")
     deck_cards = relationship("DeckCard", back_populates="deck", cascade="all, delete-orphan")
+    room_players = relationship("RoomPlayer", back_populates="deck")
 
     def __repr__(self):
         return f"<Deck(id={self.id}, deck_name='{self.deck_name}')>"
