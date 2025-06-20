@@ -151,10 +151,20 @@ class RoomPlayersResponse(BaseModel):
     max_players: int = Field(..., description="最大玩家数")
     players: List[RoomPlayerDetailResponse] = Field(..., description="玩家列表")
 
+class UserRoomStatusResponse(BaseModel):
+    """用户房间状态响应模型"""
+    in_room: bool = Field(..., description="是否在房间中")
+    room_id: Optional[UUID] = Field(None, description="房间ID")
+    room_name: Optional[str] = Field(None, description="房间名称")
+    player_order: Optional[int] = Field(None, description="玩家顺序")
+    status: Optional[str] = Field(None, description="玩家状态")
+    join_time: Optional[datetime] = Field(None, description="加入时间")
+
 # 定义具体的响应类型
 RoomSuccessResponse = SuccessResponse[RoomInDB]
 RoomListSuccessResponse = SuccessResponse[RoomListResponse]
 RoomPlayerSuccessResponse = SuccessResponse[RoomPlayerInDB]
 RoomPlayerListSuccessResponse = SuccessResponse[RoomPlayerListResponse]
 RoomPlayersSuccessResponse = SuccessResponse[RoomPlayersResponse]
+UserRoomStatusSuccessResponse = SuccessResponse[UserRoomStatusResponse]
 DeleteSuccessResponse = SuccessResponse[DeleteResponse] 

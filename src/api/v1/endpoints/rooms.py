@@ -10,7 +10,7 @@ from src.core.schemas.room import (
     RoomQueryParams, RoomPlayerQueryParams,
     RoomSuccessResponse, RoomListSuccessResponse,
     RoomPlayerSuccessResponse, RoomPlayerListSuccessResponse,
-    RoomPlayersSuccessResponse,
+    RoomPlayersSuccessResponse, UserRoomStatusSuccessResponse,
     DeleteSuccessResponse, DeleteResponse,
     ResponseCode, ErrorResponse, RoomCreateRequest
 )
@@ -73,59 +73,6 @@ async def create_room(
         )
 
 
-@router.get("/rooms/{room_id}", response_model=RoomSuccessResponse, summary="获取房间详情")
-async def get_room(
-    room_id: UUID,
-    session: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    """获取指定房间的详细信息"""
-    try:
-        APILogger.log_request(
-            "获取房间详情",
-            用户ID=current_user["id"],
-            房间ID=str(room_id)
-        )
-        
-        room_service = RoomService(session)
-        room = await room_service.get_room(room_id)
-        
-        if not room:
-            APILogger.log_warning(
-                "获取房间详情",
-                "未找到房间",
-                房间ID=str(room_id)
-            )
-            raise HTTPException(
-                status_code=404,
-                detail=ErrorResponse.create(
-                    code=ResponseCode.NOT_FOUND,
-                    message="房间不存在"
-                ).dict()
-            )
-            
-        APILogger.log_response(
-            "获取房间详情",
-            房间ID=str(room.id),
-            房间名称=room.room_name
-        )
-        
-        return RoomSuccessResponse.create(
-            code=ResponseCode.SUCCESS,
-            message="获取房间详情成功",
-            data=room
-        )
-    except Exception as e:
-        APILogger.log_error("获取房间详情", e, 用户ID=current_user["id"], 房间ID=str(room_id))
-        raise HTTPException(
-            status_code=500,
-            detail=ErrorResponse.create(
-                code=ResponseCode.SERVER_ERROR,
-                message=f"获取房间详情失败: {str(e)}"
-            ).dict()
-        )
-
-
 @router.get("/rooms", response_model=RoomListSuccessResponse, summary="获取房间列表")
 async def get_rooms(
     room_type: str = Query(None, description="房间类型"),
@@ -176,6 +123,98 @@ async def get_rooms(
             detail=ErrorResponse.create(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"获取房间列表失败: {str(e)}"
+            ).dict()
+        )
+
+
+@router.get("/rooms/my-status", response_model=UserRoomStatusSuccessResponse, summary="检查用户房间状态")
+async def check_user_room_status(
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """检查当前用户是否在房间中且未删除"""
+    try:
+        APILogger.log_request(
+            "检查用户房间状态",
+            用户ID=current_user["id"]
+        )
+        
+        room_service = RoomService(session)
+        result = await room_service.check_user_room_status(current_user["id"])
+        
+        APILogger.log_response(
+            "检查用户房间状态",
+            用户ID=current_user["id"],
+            是否在房间中=result["in_room"],
+            房间ID=result.get("room_id"),
+            房间名称=result.get("room_name")
+        )
+        
+        return UserRoomStatusSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="检查用户房间状态成功",
+            data=result
+        )
+    except Exception as e:
+        APILogger.log_error("检查用户房间状态", e, 用户ID=current_user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"检查用户房间状态失败: {str(e)}"
+            ).dict()
+        )
+
+
+@router.get("/rooms/{room_id}", response_model=RoomSuccessResponse, summary="获取房间详情")
+async def get_room(
+    room_id: UUID,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """获取指定房间的详细信息"""
+    try:
+        APILogger.log_request(
+            "获取房间详情",
+            用户ID=current_user["id"],
+            房间ID=str(room_id)
+        )
+        
+        room_service = RoomService(session)
+        room = await room_service.get_room(room_id)
+        
+        if not room:
+            APILogger.log_warning(
+                "获取房间详情",
+                "未找到房间",
+                房间ID=str(room_id)
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.NOT_FOUND,
+                    message="房间不存在"
+                ).dict()
+            )
+            
+        APILogger.log_response(
+            "获取房间详情",
+            房间ID=str(room.id),
+            房间名称=room.room_name
+        )
+        
+        return RoomSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="获取房间详情成功",
+            data=room
+        )
+    except Exception as e:
+        APILogger.log_error("获取房间详情", e, 用户ID=current_user["id"], 房间ID=str(room_id))
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"获取房间详情失败: {str(e)}"
             ).dict()
         )
 

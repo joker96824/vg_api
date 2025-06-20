@@ -361,6 +361,68 @@ class RoomService:
             logger.error(f"获取房间玩家信息失败 - room_id: {room_id}, 错误: {str(e)}")
             raise ValueError(f"获取房间玩家信息失败: {str(e)}")
 
+    async def check_user_room_status(self, user_id: UUID) -> Dict[str, Any]:
+        """检查用户房间状态"""
+        try:
+            logger.info(f"检查用户房间状态 - user_id: {user_id}")
+            
+            # 查询用户是否在房间中且未删除
+            result = await self.db.execute(
+                select(RoomPlayer)
+                .options(selectinload(RoomPlayer.room))
+                .where(
+                    and_(
+                        RoomPlayer.user_id == user_id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+                .order_by(RoomPlayer.create_time.desc())  # 按创建时间倒序，取最新的
+            )
+            room_players = result.scalars().all()
+            
+            if not room_players:
+                logger.info(f"用户不在任何房间中 - user_id: {user_id}")
+                return {
+                    "in_room": False,
+                    "room_id": None,
+                    "room_name": None,
+                    "player_order": None,
+                    "status": None,
+                    "join_time": None
+                }
+            
+            # 取最新的房间记录
+            room_player = room_players[0]
+            
+            # 检查房间是否存在且未删除
+            if not room_player.room or room_player.room.is_deleted:
+                logger.info(f"用户所在的房间已被删除 - user_id: {user_id}, room_id: {room_player.room_id}")
+                return {
+                    "in_room": False,
+                    "room_id": None,
+                    "room_name": None,
+                    "player_order": None,
+                    "status": None,
+                    "join_time": None
+                }
+            
+            # 用户在房间中
+            result_data = {
+                "in_room": True,
+                "room_id": str(room_player.room_id),
+                "room_name": room_player.room.room_name,
+                "player_order": room_player.player_order,
+                "status": room_player.status,
+                "join_time": room_player.join_time
+            }
+            
+            logger.info(f"用户正在房间中 - user_id: {user_id}, room_id: {room_player.room_id}, room_name: {room_player.room.room_name}")
+            return result_data
+            
+        except Exception as e:
+            logger.error(f"检查用户房间状态失败 - user_id: {user_id}, 错误: {str(e)}")
+            raise ValueError(f"检查用户房间状态失败: {str(e)}")
+
 
 class RoomPlayerService:
     """房间玩家服务"""
