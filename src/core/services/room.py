@@ -150,14 +150,43 @@ class RoomService:
 
     async def delete_room(self, room_id: UUID) -> bool:
         """删除房间（软删除）"""
-        db_room = await self.get_room(room_id)
-        if not db_room:
-            return False
+        try:
+            logger.info(f"开始删除房间 - room_id: {room_id}")
+            
+            db_room = await self.get_room(room_id)
+            if not db_room:
+                logger.warning(f"房间不存在 - room_id: {room_id}")
+                return False
 
-        db_room.is_deleted = True
-        db_room.update_time = datetime.utcnow()
-        await self.db.commit()
-        return True
+            # 软删除房间
+            db_room.is_deleted = True
+            db_room.update_time = datetime.utcnow()
+            
+            # 级联软删除房间中的所有玩家记录
+            result = await self.db.execute(
+                select(RoomPlayer)
+                .where(
+                    and_(
+                        RoomPlayer.room_id == room_id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+            )
+            room_players = result.scalars().all()
+            
+            for room_player in room_players:
+                room_player.is_deleted = True
+                room_player.update_time = datetime.utcnow()
+                logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
+            
+            await self.db.commit()
+            logger.info(f"房间删除成功 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"删除房间失败 - room_id: {room_id}, 错误: {str(e)}")
+            await self.db.rollback()
+            raise ValueError(f"删除房间失败: {str(e)}")
 
     async def join_room(self, room_id: UUID, user_id: UUID, deck_id: Optional[UUID] = None) -> Optional[RoomPlayer]:
         """加入房间"""
@@ -238,10 +267,31 @@ class RoomService:
                 db_room.current_players = max(0, db_room.current_players - 1)
                 db_room.update_time = datetime.utcnow()
                 
-                # 如果房间空了，删除房间
+                # 如果房间空了，删除房间和所有玩家记录
                 if db_room.current_players == 0:
+                    logger.info(f"房间空了，删除房间和所有玩家记录 - room_id: {room_id}")
+                    
+                    # 软删除房间
                     db_room.is_deleted = True
-                    logger.info(f"房间空了，删除房间 - room_id: {room_id}")
+                    
+                    # 级联软删除房间中的所有玩家记录
+                    result = await self.db.execute(
+                        select(RoomPlayer)
+                        .where(
+                            and_(
+                                RoomPlayer.room_id == room_id,
+                                RoomPlayer.is_deleted == False
+                            )
+                        )
+                    )
+                    room_players = result.scalars().all()
+                    
+                    for room_player in room_players:
+                        room_player.is_deleted = True
+                        room_player.update_time = datetime.utcnow()
+                        logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
+                    
+                    logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
             
             await self.db.commit()
             
