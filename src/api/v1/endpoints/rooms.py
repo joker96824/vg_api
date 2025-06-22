@@ -2,6 +2,8 @@ from typing import List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 
 from src.core.deps import get_db
 from src.core.schemas.room import (
@@ -17,8 +19,14 @@ from src.core.schemas.room import (
 from src.core.services.room import RoomService, RoomPlayerService
 from src.core.auth import get_current_user
 from src.core.utils.logger import APILogger
+from pydantic import BaseModel
+from src.core.models.room import Room
 
 router = APIRouter()
+
+# 加入房间请求模型
+class JoinRoomRequest(BaseModel):
+    pass_word: str = None
 
 
 @router.post("/rooms", response_model=RoomSuccessResponse, summary="创建房间")
@@ -377,8 +385,7 @@ async def delete_room(
 @router.post("/rooms/{room_id}/join", response_model=RoomPlayerSuccessResponse, summary="加入房间")
 async def join_room(
     room_id: UUID,
-    deck_id: UUID = Body(None, description="使用的卡组ID"),
-    pass_word: str = Body(None, description="房间密码，私密房间需要"),
+    room_request: JoinRoomRequest,
     session: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -388,14 +395,24 @@ async def join_room(
             "加入房间",
             用户ID=current_user["id"],
             房间ID=str(room_id),
-            卡组ID=str(deck_id) if deck_id else None,
-            是否提供密码=pass_word is not None
+            是否提供密码=room_request.pass_word is not None
         )
         
         room_service = RoomService(session)
         
-        # 先获取房间信息进行密码验证
-        room = await room_service.get_room(room_id)
+        # 先获取房间信息进行密码验证（直接从数据库查询，不隐藏密码）
+        result = await session.execute(
+            select(Room)
+            .options(selectinload(Room.room_players))
+            .where(
+                and_(
+                    Room.id == room_id,
+                    Room.is_deleted == False
+                )
+            )
+        )
+        room = result.scalar_one_or_none()
+        
         if not room:
             APILogger.log_warning(
                 "加入房间",
@@ -411,7 +428,7 @@ async def join_room(
             )
         
         # 检查房间是否需要密码
-        if room.pass_word and room.pass_word != pass_word:
+        if room.pass_word and room.pass_word != room_request.pass_word:
             APILogger.log_warning(
                 "加入房间",
                 "密码错误",
@@ -426,7 +443,7 @@ async def join_room(
                 ).dict()
             )
         
-        result = await room_service.join_room(room_id, current_user["id"], deck_id)
+        result = await room_service.join_room(room_id, current_user["id"])
         
         if not result:
             APILogger.log_warning(

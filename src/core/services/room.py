@@ -252,7 +252,7 @@ class RoomService:
             await self.db.rollback()
             raise ValueError(f"删除房间失败: {str(e)}")
 
-    async def join_room(self, room_id: UUID, user_id: UUID, deck_id: Optional[UUID] = None) -> Optional[RoomPlayer]:
+    async def join_room(self, room_id: UUID, user_id: UUID) -> Optional[RoomPlayer]:
         """加入房间"""
         try:
             logger.info(f"用户尝试加入房间 - room_id: {room_id}, user_id: {user_id}")
@@ -288,7 +288,7 @@ class RoomService:
                 user_id=user_id,
                 player_order=next_order,
                 status="waiting",
-                deck_id=deck_id,
+                deck_id=None,  # 不设置卡组ID
                 join_time=datetime.utcnow(),
                 remark=""
             )
