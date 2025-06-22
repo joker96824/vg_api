@@ -75,9 +75,8 @@ async def create_room(
 
 @router.get("/rooms", response_model=RoomListSuccessResponse, summary="获取房间列表")
 async def get_rooms(
-    room_type: str = Query(None, description="房间类型"),
-    status: str = Query(None, description="房间状态"),
-    game_mode: str = Query(None, description="游戏模式"),
+    key_word: str = Query(None, description="房间名称关键词，支持模糊匹配"),
+    friend_room: bool = Query(False, description="是否只显示好友的房间"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     session: AsyncSession = Depends(get_db),
@@ -86,9 +85,8 @@ async def get_rooms(
     """获取房间列表"""
     try:
         params = RoomQueryParams(
-            room_type=room_type,
-            status=status,
-            game_mode=game_mode,
+            key_word=key_word,
+            friend_room=friend_room,
             page=page,
             page_size=page_size
         )
@@ -100,7 +98,7 @@ async def get_rooms(
         )
         
         room_service = RoomService(session)
-        total, rooms = await room_service.get_rooms(params)
+        total, rooms = await room_service.get_rooms(params, current_user["id"])
         
         APILogger.log_response(
             "获取房间列表",

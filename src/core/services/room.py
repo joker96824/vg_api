@@ -12,6 +12,7 @@ from ..models.room_player import RoomPlayer
 from ..models.user import User
 from ..models.deck import Deck
 from ..schemas.room import RoomCreate, RoomUpdate, RoomPlayerCreate, RoomPlayerUpdate, RoomQueryParams, RoomPlayerQueryParams
+from ..models.friendship import Friendship
 
 logger = logging.getLogger(__name__)
 
@@ -86,39 +87,102 @@ class RoomService:
                 )
             )
         )
-        return result.scalar_one_or_none()
-
-    async def get_rooms(self, params: RoomQueryParams) -> Tuple[int, List[Room]]:
-        """获取房间列表"""
-        # 构建查询条件
-        conditions = [Room.is_deleted == False]
+        room = result.scalar_one_or_none()
         
-        if params.room_type:
-            conditions.append(Room.room_type == params.room_type)
-        if params.status:
-            conditions.append(Room.status == params.status)
-        if params.game_mode:
-            conditions.append(Room.game_mode == params.game_mode)
+        # 处理密码字段，防止泄露
+        if room and room.pass_word:
+            room.pass_word = "***"
+            logger.debug(f"房间 {room.id} 的密码已隐藏")
+        
+        return room
 
-        # 计算总数
-        total = await self.db.scalar(
-            select(func.count()).select_from(Room).where(and_(*conditions))
-        )
-        logger.debug(f"查询房间总数: {total}")
+    async def get_rooms(self, params: RoomQueryParams, user_id: UUID) -> Tuple[int, List[Room]]:
+        """获取房间列表"""
+        try:
+            logger.info(f"开始查询房间列表 - user_id: {user_id}, params: {params.dict()}")
+            
+            # 基础条件：只显示未删除的房间，状态为waiting
+            conditions = [
+                Room.is_deleted == False,
+                Room.status == "waiting"
+            ]
+            
+            # 关键词搜索
+            if params.key_word:
+                conditions.append(Room.room_name.ilike(f"%{params.key_word}%"))
+                logger.info(f"添加关键词搜索条件: {params.key_word}")
+            
+            # 获取用户的好友ID列表
+            friend_ids = []
+            if params.friend_room or not params.friend_room:  # 总是需要获取好友列表
+                result = await self.db.execute(
+                    select(Friendship.friend_id)
+                    .where(
+                        and_(
+                            Friendship.user_id == user_id,
+                            Friendship.is_deleted == False,
+                            Friendship.is_blocked == False
+                        )
+                    )
+                )
+                friend_ids = [str(friend_id) for friend_id in result.scalars().all()]
+                logger.info(f"用户好友数量: {len(friend_ids)}")
+            
+            # 房间可见性条件
+            if params.friend_room:
+                # 只显示好友的房间
+                if friend_ids:
+                    conditions.append(Room.created_by.in_(friend_ids))
+                else:
+                    # 如果没有好友，返回空结果
+                    conditions.append(Room.id == None)  # 永远不匹配的条件
+                logger.info("只显示好友的房间")
+            else:
+                # 显示所有可见房间：public、ranked，以及好友的private房间
+                if friend_ids:
+                    conditions.append(
+                        or_(
+                            Room.room_type.in_(["public", "ranked"]),
+                            and_(
+                                Room.room_type == "private",
+                                Room.created_by.in_(friend_ids)
+                            )
+                        )
+                    )
+                else:
+                    # 如果没有好友，只显示公开和排位房间
+                    conditions.append(Room.room_type.in_(["public", "ranked"]))
+                logger.info("显示所有可见房间")
 
-        # 获取分页数据
-        result = await self.db.execute(
-            select(Room)
-            .options(selectinload(Room.room_players))
-            .where(and_(*conditions))
-            .order_by(desc(Room.create_time))
-            .offset((params.page - 1) * params.page_size)
-            .limit(params.page_size)
-        )
-        rooms = result.scalars().all()
-        logger.debug(f"查询房间结果数量: {len(rooms)}")
+            # 计算总数
+            total = await self.db.scalar(
+                select(func.count()).select_from(Room).where(and_(*conditions))
+            )
+            logger.info(f"查询房间总数: {total}")
 
-        return total, rooms
+            # 获取分页数据
+            result = await self.db.execute(
+                select(Room)
+                .options(selectinload(Room.room_players))
+                .where(and_(*conditions))
+                .order_by(desc(Room.create_time))
+                .offset((params.page - 1) * params.page_size)
+                .limit(params.page_size)
+            )
+            rooms = result.scalars().all()
+            logger.info(f"查询房间结果数量: {len(rooms)}")
+
+            # 处理密码字段，防止泄露
+            for room in rooms:
+                if room.pass_word:
+                    room.pass_word = "***"
+                    logger.debug(f"房间 {room.id} 的密码已隐藏")
+
+            return total, rooms
+            
+        except Exception as e:
+            logger.error(f"查询房间列表失败 - user_id: {user_id}, 错误: {str(e)}")
+            raise ValueError(f"查询房间列表失败: {str(e)}")
 
     async def update_room(self, room_id: UUID, room: RoomUpdate) -> Optional[Room]:
         """更新房间信息"""

@@ -67,9 +67,8 @@ class RoomPlayerDetailResponse(BaseModel):
 # 查询参数模型
 class RoomQueryParams(BaseModel):
     """房间查询参数模型"""
-    room_type: Optional[str] = Field(None, description="房间类型：public-公开, private-私密, ranked-排位")
-    status: Optional[str] = Field(None, description="房间状态：waiting-等待中, playing-游戏中, finished-已结束")
-    game_mode: Optional[str] = Field(None, description="游戏模式：standard-标准, draft-轮抽, sealed-现开")
+    key_word: Optional[str] = Field(None, description="房间名称关键词，支持模糊匹配")
+    friend_room: bool = Field(False, description="是否只显示好友的房间")
     page: int = Field(1, ge=1, description="页码")
     page_size: int = Field(20, ge=1, le=100, description="每页数量")
 
