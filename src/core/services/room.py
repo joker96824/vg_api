@@ -250,6 +250,10 @@ class RoomService:
             
             await self.db.commit()
             logger.info(f"房间删除成功 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
+            
+            # 发送房间解散通知
+            await self._notify_room_dissolved(str(room_id))
+            
             return True
             
         except Exception as e:
