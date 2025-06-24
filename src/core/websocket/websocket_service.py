@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 from .services.chat.handler import ChatMessageHandler
+from .services.room.handler import RoomMessageHandler
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ class WebSocketService:
         self.session = session
         self.manager = ConnectionManager()  # 现在是单例
         self.chat_handler = ChatMessageHandler(self.manager, self.session)
+        self.room_handler = RoomMessageHandler(self.manager, self.session)
         logger.info("WebSocket 服务初始化")
         
         # 只在第一次创建时启动心跳和订阅
@@ -80,6 +82,8 @@ class WebSocketService:
                 await self._handle_auth(websocket, message)
             elif message_type == "chat":
                 await self._handle_chat(websocket, message)
+            elif message_type == "room":
+                await self._handle_room(websocket, message)
             elif message_type == "ping":
                 await self._handle_ping(websocket)
             elif message_type == "pong":
@@ -191,6 +195,22 @@ class WebSocketService:
         except Exception as e:
             logger.error(f"处理聊天消息失败: {str(e)}")
             await self._send_error(websocket, "处理消息失败")
+            
+    async def _handle_room(self, websocket: WebSocket, message: Dict[str, Any]) -> None:
+        """
+        处理房间消息
+        
+        Args:
+            websocket: WebSocket连接对象
+            message: 房间消息
+        """
+        try:
+            # 使用房间处理器处理消息
+            await self.room_handler.handle_room_message(websocket, message)
+            
+        except Exception as e:
+            logger.error(f"处理房间消息失败: {str(e)}")
+            await self._send_error(websocket, "处理房间消息失败")
             
     async def _handle_ping(self, websocket: WebSocket) -> None:
         """

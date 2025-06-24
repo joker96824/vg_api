@@ -19,7 +19,8 @@ class RedisPublisher:
         self.connection = connection
         self._channels = {
             'broadcast': 'websocket_broadcast',
-            'private': 'websocket_private'
+            'private': 'websocket_private',
+            'room_update': 'room_update'
         }
         
     async def publish_broadcast(self, message: Dict[str, Any], exclude_user_id: Optional[str] = None) -> None:
@@ -79,7 +80,106 @@ class RedisPublisher:
         except Exception as e:
             logger.error(f"发布私聊消息时发生错误: {str(e)}")
             raise
+
+    async def publish_room_update(self, room_id: str) -> None:
+        """
+        发布房间更新消息
+        
+        Args:
+            room_id: 房间ID
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布房间更新消息: 房间ID={room_id}")
             
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['room_update'],
+                json.dumps({
+                    'room_id': room_id
+                })
+            )
+            logger.info(f"房间更新消息已发布到 Redis: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发布房间更新消息时发生错误: {str(e)}")
+            raise
+
+    async def publish_room_user_update(self, room_id: str) -> None:
+        """
+        发布房间玩家变化消息
+        
+        Args:
+            room_id: 房间ID
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布房间玩家变化消息: 房间ID={room_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['room_update'],
+                json.dumps({
+                    'room_id': room_id,
+                    'message_type': 'room_user_update'
+                })
+            )
+            logger.info(f"房间玩家变化消息已发布到 Redis: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发布房间玩家变化消息时发生错误: {str(e)}")
+            raise
+
+    async def publish_room_info_update(self, room_id: str) -> None:
+        """
+        发布房间信息变化消息
+        
+        Args:
+            room_id: 房间ID
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布房间信息变化消息: 房间ID={room_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['room_update'],
+                json.dumps({
+                    'room_id': room_id,
+                    'message_type': 'room_info_update'
+                })
+            )
+            logger.info(f"房间信息变化消息已发布到 Redis: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发布房间信息变化消息时发生错误: {str(e)}")
+            raise
+
+    async def publish_room_dissolved(self, room_id: str) -> None:
+        """
+        发布房间解散消息
+        
+        Args:
+            room_id: 房间ID
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布房间解散消息: 房间ID={room_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['room_update'],
+                json.dumps({
+                    'room_id': room_id,
+                    'message_type': 'room_dissolved'
+                })
+            )
+            logger.info(f"房间解散消息已发布到 Redis: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发布房间解散消息时发生错误: {str(e)}")
+            raise
+
     def add_channel(self, name: str, channel: str):
         """
         添加发布频道

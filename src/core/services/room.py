@@ -21,6 +21,8 @@ class RoomService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+        # 延迟初始化连接管理器
+        self._connection_manager = None
 
     async def create_room(self, room: RoomCreate, user_id: UUID) -> Room:
         """创建房间"""
@@ -204,6 +206,9 @@ class RoomService:
             await self.db.commit()
             await self.db.refresh(db_room)
             
+            # 发送房间信息变化通知
+            await self._notify_room_info_update(str(room_id))
+            
             logger.info(f"房间更新完成 - room_id: {room_id}")
             return db_room
             
@@ -298,10 +303,13 @@ class RoomService:
             db_room.current_players += 1
             db_room.update_time = datetime.utcnow()
             
+            # 提交事务
             await self.db.commit()
-            await self.db.refresh(room_player)
             
-            logger.info(f"用户成功加入房间 - room_id: {room_id}, user_id: {user_id}, order: {next_order}")
+            # 发送房间玩家变化通知
+            await self._notify_room_user_update(str(room_id))
+            
+            logger.info(f"用户成功加入房间 - room_id: {room_id}, user_id: {user_id}, player_order: {room_player.player_order}")
             return room_player
             
         except Exception as e:
@@ -358,6 +366,14 @@ class RoomService:
                     logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
             
             await self.db.commit()
+            
+            # 根据情况发送不同的通知
+            if db_room and db_room.current_players == 0:
+                # 房间空了，发送房间解散通知
+                await self._notify_room_dissolved(str(room_id))
+            else:
+                # 房间还有玩家，发送房间玩家变化通知
+                await self._notify_room_user_update(str(room_id))
             
             logger.info(f"用户成功离开房间 - room_id: {room_id}, user_id: {user_id}")
             return True
@@ -536,6 +552,65 @@ class RoomService:
         except Exception as e:
             logger.error(f"检查用户房间状态失败 - user_id: {user_id}, 错误: {str(e)}")
             raise ValueError(f"检查用户房间状态失败: {str(e)}")
+
+    async def _notify_room_update(self, room_id: str) -> None:
+        """发送房间更新WebSocket通知"""
+        try:
+            # 获取WebSocket连接管理器实例
+            connection_manager = self._get_connection_manager()
+            
+            # 发送房间更新消息
+            await connection_manager.send_room_update(room_id)
+            logger.info(f"房间更新通知已发送: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发送房间更新通知时发生错误: {str(e)}")
+
+    async def _notify_room_user_update(self, room_id: str) -> None:
+        """发送房间玩家变化通知"""
+        try:
+            # 获取WebSocket连接管理器实例
+            connection_manager = self._get_connection_manager()
+            
+            # 发送房间玩家变化消息
+            await connection_manager.send_room_user_update(room_id)
+            logger.info(f"房间玩家变化通知已发送: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发送房间玩家变化通知时发生错误: {str(e)}")
+
+    async def _notify_room_dissolved(self, room_id: str) -> None:
+        """发送房间解散通知"""
+        try:
+            # 获取WebSocket连接管理器实例
+            connection_manager = self._get_connection_manager()
+            
+            # 发送房间解散消息
+            await connection_manager.send_room_dissolved(room_id)
+            logger.info(f"房间解散通知已发送: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发送房间解散通知时发生错误: {str(e)}")
+
+    async def _notify_room_info_update(self, room_id: str) -> None:
+        """发送房间信息变化通知"""
+        try:
+            # 获取WebSocket连接管理器实例
+            connection_manager = self._get_connection_manager()
+            
+            # 发送房间信息变化消息
+            await connection_manager.send_room_info_update(room_id)
+            logger.info(f"房间信息变化通知已发送: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发送房间信息变化通知时发生错误: {str(e)}")
+
+    def _get_connection_manager(self):
+        """获取WebSocket连接管理器实例（延迟初始化）"""
+        if self._connection_manager is None:
+            from src.core.websocket.connection_manager import ConnectionManager
+            self._connection_manager = ConnectionManager()
+        return self._connection_manager
 
 
 class RoomPlayerService:

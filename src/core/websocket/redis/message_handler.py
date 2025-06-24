@@ -33,6 +33,8 @@ class RedisMessageHandler:
                 await self._handle_broadcast(message_data)
             elif channel == 'websocket_private':
                 await self._handle_private(message_data)
+            elif channel == 'room_update':
+                await self._handle_room_update(message_data)
             else:
                 logger.warning(f"收到未知频道的消息: {channel}")
                 
@@ -85,6 +87,107 @@ class RedisMessageHandler:
                 
         except Exception as e:
             logger.error(f"处理私聊消息时发生错误: {str(e)}")
+            
+    async def _handle_room_update(self, message_data: Dict[str, Any]) -> None:
+        """
+        处理房间更新消息
+        
+        Args:
+            message_data: 房间更新消息数据
+        """
+        try:
+            room_id = message_data.get('room_id')
+            message_type = message_data.get('message_type', 'room_update')
+            
+            if room_id:
+                logger.info(f"处理房间更新消息: 房间ID={room_id}, 消息类型={message_type}")
+                
+                # 查找房间中的所有玩家并发送消息
+                room_players = await self._get_room_players(room_id)
+                if room_players:
+                    await self._send_to_room_players(room_id, room_players, message_type)
+                else:
+                    logger.info(f"房间 {room_id} 中没有找到玩家")
+            else:
+                logger.warning("收到无效的房间更新消息")
+                
+        except Exception as e:
+            logger.error(f"处理房间更新消息时发生错误: {str(e)}")
+            
+    async def _get_room_players(self, room_id: str) -> list:
+        """
+        获取房间中的所有玩家ID
+        
+        Args:
+            room_id: 房间ID
+            
+        Returns:
+            list: 玩家ID列表
+        """
+        try:
+            # 这里需要从数据库查询房间玩家信息
+            # 由于当前架构限制，我们暂时通过遍历连接来查找房间玩家
+            # 在实际应用中，应该维护房间-玩家的映射关系
+            
+            room_players = []
+            for user_id, conn in self.connection_manager.connections.items():
+                # 检查用户是否在指定房间中
+                # 这里需要根据实际的数据结构来判断
+                # 暂时返回所有连接的用户（实际应该查询数据库）
+                room_players.append(user_id)
+                
+            return room_players
+            
+        except Exception as e:
+            logger.error(f"获取房间玩家时发生错误: {str(e)}")
+            return []
+            
+    async def _send_to_room_players(self, room_id: str, player_ids: list, message_type: str) -> None:
+        """
+        向房间中的所有玩家发送消息
+        
+        Args:
+            room_id: 房间ID
+            player_ids: 玩家ID列表
+            message_type: 消息类型
+        """
+        try:
+            message = {
+                "type": message_type,
+                "room_id": room_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+                
+            # 记录开始发送
+            logger.info(f"开始向房间 {room_id} 的玩家发送消息: 类型={message.get('type')}")
+            
+            # 记录接收者列表
+            receivers = []
+            failed_receivers = []
+            
+            for user_id in player_ids:
+                if user_id in self.connection_manager.connections:
+                    try:
+                        websocket = self.connection_manager.connections[user_id]["websocket"]
+                        await websocket.send_json(message)
+                        receivers.append(user_id)
+                        logger.debug(f"成功发送{message_type}消息给用户 {user_id}")
+                    except Exception as e:
+                        logger.error(f"发送{message_type}消息给用户 {user_id} 时发生错误: {str(e)}")
+                        failed_receivers.append(user_id)
+                else:
+                    logger.info(f"用户 {user_id} 不在当前实例")
+                    
+            # 记录发送结果
+            logger.info(
+                f"{message_type}消息发送完成: "
+                f"房间ID={room_id}, "
+                f"成功发送给 {len(receivers)} 个用户: {', '.join(receivers)}, "
+                f"失败 {len(failed_receivers)} 个用户: {', '.join(failed_receivers) if failed_receivers else '无'}"
+            )
+            
+        except Exception as e:
+            logger.error(f"向房间玩家发送消息时发生错误: {str(e)}")
             
     async def _local_broadcast(self, message: Dict[str, Any], exclude_user_id: Optional[str] = None) -> None:
         """

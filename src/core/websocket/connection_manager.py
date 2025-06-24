@@ -215,6 +215,176 @@ class ConnectionManager:
             logger.error(f"发送私聊消息时发生错误: {str(e)}")
             return False
             
+    async def send_room_update(self, room_id: str) -> bool:
+        """
+        发送房间更新消息给房间中的所有玩家
+        
+        Args:
+            room_id: 房间ID
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            # 先尝试在当前实例中查找房间玩家并发送
+            room_players = await self._get_room_players_in_instance(room_id)
+            
+            if room_players:
+                # 在当前实例中找到房间玩家，直接发送
+                logger.info(f"房间 {room_id} 的玩家在当前实例，直接发送消息")
+                await self._send_to_room_players_local(room_id, room_players)
+                return True
+            else:
+                # 房间玩家不在当前实例，通过Redis广播
+                logger.info(f"房间 {room_id} 的玩家不在当前实例，通过Redis广播消息")
+                await self.redis_publisher.publish_room_update(room_id)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送房间更新消息时发生错误: {str(e)}")
+            return False
+
+    async def send_room_user_update(self, room_id: str) -> bool:
+        """
+        发送房间玩家变化消息给房间中的所有玩家
+        
+        Args:
+            room_id: 房间ID
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            # 先尝试在当前实例中查找房间玩家并发送
+            room_players = await self._get_room_players_in_instance(room_id)
+            
+            if room_players:
+                # 在当前实例中找到房间玩家，直接发送
+                logger.info(f"房间 {room_id} 的玩家在当前实例，直接发送玩家变化消息")
+                await self._send_room_user_update_local(room_id, room_players)
+                return True
+            else:
+                # 房间玩家不在当前实例，通过Redis广播
+                logger.info(f"房间 {room_id} 的玩家不在当前实例，通过Redis广播玩家变化消息")
+                await self.redis_publisher.publish_room_user_update(room_id)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送房间玩家变化消息时发生错误: {str(e)}")
+            return False
+
+    async def send_room_info_update(self, room_id: str) -> bool:
+        """
+        发送房间信息变化消息给房间中的所有玩家
+        
+        Args:
+            room_id: 房间ID
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            # 先尝试在当前实例中查找房间玩家并发送
+            room_players = await self._get_room_players_in_instance(room_id)
+            
+            if room_players:
+                # 在当前实例中找到房间玩家，直接发送
+                logger.info(f"房间 {room_id} 的玩家在当前实例，直接发送信息变化消息")
+                await self._send_room_info_update_local(room_id, room_players)
+                return True
+            else:
+                # 房间玩家不在当前实例，通过Redis广播
+                logger.info(f"房间 {room_id} 的玩家不在当前实例，通过Redis广播信息变化消息")
+                await self.redis_publisher.publish_room_info_update(room_id)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送房间信息变化消息时发生错误: {str(e)}")
+            return False
+
+    async def send_room_dissolved(self, room_id: str) -> bool:
+        """
+        发送房间解散消息给房间中的所有玩家
+        
+        Args:
+            room_id: 房间ID
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            # 先尝试在当前实例中查找房间玩家并发送
+            room_players = await self._get_room_players_in_instance(room_id)
+            
+            if room_players:
+                # 在当前实例中找到房间玩家，直接发送
+                logger.info(f"房间 {room_id} 的玩家在当前实例，直接发送解散消息")
+                await self._send_room_dissolved_local(room_id, room_players)
+                return True
+            else:
+                # 房间玩家不在当前实例，通过Redis广播
+                logger.info(f"房间 {room_id} 的玩家不在当前实例，通过Redis广播解散消息")
+                await self.redis_publisher.publish_room_dissolved(room_id)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送房间解散消息时发生错误: {str(e)}")
+            return False
+            
+    async def _get_room_players_in_instance(self, room_id: str) -> list:
+        """
+        获取当前实例中指定房间的玩家ID列表
+        
+        Args:
+            room_id: 房间ID
+            
+        Returns:
+            list: 玩家ID列表
+        """
+        # 这里需要根据实际的数据结构来查询房间玩家
+        # 暂时返回空列表，实际应该查询数据库或内存中的房间-玩家映射
+        return []
+        
+    async def _send_to_room_players_local(self, room_id: str, player_ids: list) -> None:
+        """
+        在当前实例中向房间玩家发送消息
+        
+        Args:
+            room_id: 房间ID
+            player_ids: 玩家ID列表
+        """
+        try:
+            message = {
+                "type": "room_update",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            logger.info(f"开始向房间 {room_id} 的玩家发送消息: 类型={message.get('type')}")
+            
+            receivers = []
+            failed_receivers = []
+            
+            for user_id in player_ids:
+                if user_id in self.connections:
+                    try:
+                        websocket = self.connections[user_id]["websocket"]
+                        await websocket.send_json(message)
+                        receivers.append(user_id)
+                        logger.debug(f"成功发送房间更新消息给用户 {user_id}")
+                    except Exception as e:
+                        logger.error(f"发送房间更新消息给用户 {user_id} 时发生错误: {str(e)}")
+                        failed_receivers.append(user_id)
+                        
+            logger.info(
+                f"房间更新消息发送完成: "
+                f"房间ID={room_id}, "
+                f"成功发送给 {len(receivers)} 个用户: {', '.join(receivers)}, "
+                f"失败 {len(failed_receivers)} 个用户: {', '.join(failed_receivers) if failed_receivers else '无'}"
+            )
+            
+        except Exception as e:
+            logger.error(f"向房间玩家发送消息时发生错误: {str(e)}")
+            
     def get_connection_count(self) -> int:
         """
         获取当前连接数
@@ -305,4 +475,127 @@ class ConnectionManager:
             logger.info("消息已发布到 Redis")
             
         except Exception as e:
-            logger.error(f"广播消息时发生错误: {str(e)}") 
+            logger.error(f"广播消息时发生错误: {str(e)}")
+
+    async def _send_room_user_update_local(self, room_id: str, player_ids: list) -> None:
+        """
+        在当前实例中向房间玩家发送玩家变化消息
+        
+        Args:
+            room_id: 房间ID
+            player_ids: 玩家ID列表
+        """
+        try:
+            message = {
+                "type": "room_user_update",
+                "room_id": room_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            logger.info(f"开始向房间 {room_id} 的玩家发送玩家变化消息")
+            
+            receivers = []
+            failed_receivers = []
+            
+            for user_id in player_ids:
+                if user_id in self.connections:
+                    try:
+                        websocket = self.connections[user_id]["websocket"]
+                        await websocket.send_json(message)
+                        receivers.append(user_id)
+                        logger.debug(f"成功发送房间玩家变化消息给用户 {user_id}")
+                    except Exception as e:
+                        logger.error(f"发送房间玩家变化消息给用户 {user_id} 时发生错误: {str(e)}")
+                        failed_receivers.append(user_id)
+                        
+            logger.info(
+                f"房间玩家变化消息发送完成: "
+                f"房间ID={room_id}, "
+                f"成功发送给 {len(receivers)} 个用户: {', '.join(receivers)}, "
+                f"失败 {len(failed_receivers)} 个用户: {', '.join(failed_receivers) if failed_receivers else '无'}"
+            )
+            
+        except Exception as e:
+            logger.error(f"向房间玩家发送玩家变化消息时发生错误: {str(e)}")
+
+    async def _send_room_info_update_local(self, room_id: str, player_ids: list) -> None:
+        """
+        在当前实例中向房间玩家发送信息变化消息
+        
+        Args:
+            room_id: 房间ID
+            player_ids: 玩家ID列表
+        """
+        try:
+            message = {
+                "type": "room_info_update",
+                "room_id": room_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            logger.info(f"开始向房间 {room_id} 的玩家发送信息变化消息")
+            
+            receivers = []
+            failed_receivers = []
+            
+            for user_id in player_ids:
+                if user_id in self.connections:
+                    try:
+                        websocket = self.connections[user_id]["websocket"]
+                        await websocket.send_json(message)
+                        receivers.append(user_id)
+                        logger.debug(f"成功发送房间信息变化消息给用户 {user_id}")
+                    except Exception as e:
+                        logger.error(f"发送房间信息变化消息给用户 {user_id} 时发生错误: {str(e)}")
+                        failed_receivers.append(user_id)
+                        
+            logger.info(
+                f"房间信息变化消息发送完成: "
+                f"房间ID={room_id}, "
+                f"成功发送给 {len(receivers)} 个用户: {', '.join(receivers)}, "
+                f"失败 {len(failed_receivers)} 个用户: {', '.join(failed_receivers) if failed_receivers else '无'}"
+            )
+            
+        except Exception as e:
+            logger.error(f"向房间玩家发送信息变化消息时发生错误: {str(e)}")
+
+    async def _send_room_dissolved_local(self, room_id: str, player_ids: list) -> None:
+        """
+        在当前实例中向房间玩家发送解散消息
+        
+        Args:
+            room_id: 房间ID
+            player_ids: 玩家ID列表
+        """
+        try:
+            message = {
+                "type": "room_dissolved",
+                "room_id": room_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            logger.info(f"开始向房间 {room_id} 的玩家发送解散消息")
+            
+            receivers = []
+            failed_receivers = []
+            
+            for user_id in player_ids:
+                if user_id in self.connections:
+                    try:
+                        websocket = self.connections[user_id]["websocket"]
+                        await websocket.send_json(message)
+                        receivers.append(user_id)
+                        logger.debug(f"成功发送房间解散消息给用户 {user_id}")
+                    except Exception as e:
+                        logger.error(f"发送房间解散消息给用户 {user_id} 时发生错误: {str(e)}")
+                        failed_receivers.append(user_id)
+                        
+            logger.info(
+                f"房间解散消息发送完成: "
+                f"房间ID={room_id}, "
+                f"成功发送给 {len(receivers)} 个用户: {', '.join(receivers)}, "
+                f"失败 {len(failed_receivers)} 个用户: {', '.join(failed_receivers) if failed_receivers else '无'}"
+            )
+            
+        except Exception as e:
+            logger.error(f"向房间玩家发送解散消息时发生错误: {str(e)}") 

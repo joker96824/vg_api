@@ -20,7 +20,7 @@ class RedisSubscriber:
         self.connection = connection
         self.message_handler = message_handler
         self._sub_task: Optional[asyncio.Task] = None
-        self._channels = ['websocket_broadcast', 'websocket_private']
+        self._channels = ['websocket_broadcast', 'websocket_private', 'room_update']
         
     async def start(self):
         """启动订阅任务"""
