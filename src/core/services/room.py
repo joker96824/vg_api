@@ -282,39 +282,63 @@ class RoomService:
                 logger.warning(f"房间已满 - room_id: {room_id}, current: {db_room.current_players}, max: {db_room.max_players}")
                 raise ValueError("房间已满")
                 
-            # 检查用户是否已在房间中
+            # 检查用户是否已在房间中（未删除的记录）
             existing_player = await self.get_room_player_by_user(room_id, user_id)
             if existing_player:
                 logger.warning(f"用户已在房间中 - room_id: {room_id}, user_id: {user_id}")
                 raise ValueError("用户已在房间中")
                 
-            # 获取下一个玩家顺序
-            next_order = await self.get_next_player_order(room_id)
-            
-            # 创建房间玩家记录
-            room_player = RoomPlayer(
-                room_id=room_id,
-                user_id=user_id,
-                player_order=next_order,
-                status="waiting",
-                deck_id=None,  # 不设置卡组ID
-                join_time=datetime.utcnow(),
-                remark=""
-            )
-            self.db.add(room_player)
-            
-            # 更新房间当前玩家数
-            db_room.current_players += 1
-            db_room.update_time = datetime.utcnow()
-            
-            # 提交事务
-            await self.db.commit()
-            
-            # 发送房间玩家变化通知
-            await self._notify_room_user_update(str(room_id))
-            
-            logger.info(f"用户成功加入房间 - room_id: {room_id}, user_id: {user_id}, player_order: {room_player.player_order}")
-            return room_player
+            # 检查是否存在已删除的玩家记录（被踢出或离开的记录）
+            deleted_player = await self._get_deleted_room_player_by_user(room_id, user_id)
+            if deleted_player:
+                # 重新激活已删除的玩家记录
+                logger.info(f"重新激活已删除的玩家记录 - room_id: {room_id}, user_id: {user_id}")
+                deleted_player.is_deleted = False
+                deleted_player.status = "waiting"
+                deleted_player.join_time = datetime.utcnow()
+                deleted_player.leave_time = None
+                deleted_player.update_time = datetime.utcnow()
+                
+                # 更新房间当前玩家数
+                db_room.current_players += 1
+                db_room.update_time = datetime.utcnow()
+                
+                await self.db.commit()
+                
+                # 发送房间玩家变化通知
+                await self._notify_room_user_update(str(room_id))
+                
+                logger.info(f"用户重新加入房间成功 - room_id: {room_id}, user_id: {user_id}, player_order: {deleted_player.player_order}")
+                return deleted_player
+            else:
+                # 创建新的房间玩家记录
+                # 获取下一个玩家顺序
+                next_order = await self.get_next_player_order(room_id)
+                
+                # 创建房间玩家记录
+                room_player = RoomPlayer(
+                    room_id=room_id,
+                    user_id=user_id,
+                    player_order=next_order,
+                    status="waiting",
+                    deck_id=None,  # 不设置卡组ID
+                    join_time=datetime.utcnow(),
+                    remark=""
+                )
+                self.db.add(room_player)
+                
+                # 更新房间当前玩家数
+                db_room.current_players += 1
+                db_room.update_time = datetime.utcnow()
+                
+                # 提交事务
+                await self.db.commit()
+                
+                # 发送房间玩家变化通知
+                await self._notify_room_user_update(str(room_id))
+                
+                logger.info(f"用户成功加入房间 - room_id: {room_id}, user_id: {user_id}, player_order: {room_player.player_order}")
+                return room_player
             
         except Exception as e:
             logger.error(f"加入房间失败 - room_id: {room_id}, user_id: {user_id}, 错误: {str(e)}")
@@ -398,6 +422,21 @@ class RoomService:
                     RoomPlayer.is_deleted == False
                 )
             )
+        )
+        return result.scalar_one_or_none()
+
+    async def _get_deleted_room_player_by_user(self, room_id: UUID, user_id: UUID) -> Optional[RoomPlayer]:
+        """根据用户ID获取已删除的房间玩家记录"""
+        result = await self.db.execute(
+            select(RoomPlayer)
+            .where(
+                and_(
+                    RoomPlayer.room_id == room_id,
+                    RoomPlayer.user_id == user_id,
+                    RoomPlayer.is_deleted == True
+                )
+            )
+            .order_by(RoomPlayer.update_time.desc())  # 按更新时间倒序，取最新的记录
         )
         return result.scalar_one_or_none()
 
@@ -557,6 +596,88 @@ class RoomService:
             logger.error(f"检查用户房间状态失败 - user_id: {user_id}, 错误: {str(e)}")
             raise ValueError(f"检查用户房间状态失败: {str(e)}")
 
+    async def kick_player(self, room_id: UUID, owner_id: UUID, target_user_id: UUID) -> bool:
+        """踢出房间玩家"""
+        try:
+            logger.info(f"房主尝试踢出玩家 - room_id: {room_id}, owner_id: {owner_id}, target_user_id: {target_user_id}")
+            
+            # 检查房间是否存在
+            db_room = await self.get_room(room_id)
+            if not db_room:
+                logger.warning(f"房间不存在 - room_id: {room_id}")
+                raise ValueError("房间不存在")
+                
+            # 检查权限：只有房主可以踢人
+            if str(db_room.created_by) != str(owner_id):
+                logger.warning(f"无权限踢出玩家 - room_id: {room_id}, owner_id: {owner_id}, room_created_by: {db_room.created_by}")
+                raise ValueError("只有房主可以踢出玩家")
+                
+            # 检查目标用户是否在房间中
+            target_player = await self.get_room_player_by_user(room_id, target_user_id)
+            if not target_player:
+                logger.warning(f"目标用户不在房间中 - room_id: {room_id}, target_user_id: {target_user_id}")
+                raise ValueError("目标用户不在房间中")
+                
+            # 不能踢出房主自己
+            if str(target_user_id) == str(owner_id):
+                logger.warning(f"不能踢出房主自己 - room_id: {room_id}, owner_id: {owner_id}")
+                raise ValueError("不能踢出房主自己")
+                
+            # 软删除目标玩家的房间记录
+            target_player.is_deleted = True
+            target_player.leave_time = datetime.utcnow()
+            target_player.status = "kicked"
+            target_player.update_time = datetime.utcnow()
+            
+            # 更新房间当前玩家数
+            db_room.current_players = max(0, db_room.current_players - 1)
+            db_room.update_time = datetime.utcnow()
+            
+            # 如果房间空了，删除房间
+            if db_room.current_players == 0:
+                logger.info(f"房间空了，删除房间 - room_id: {room_id}")
+                db_room.is_deleted = True
+                
+                # 级联软删除房间中的所有玩家记录
+                result = await self.db.execute(
+                    select(RoomPlayer)
+                    .where(
+                        and_(
+                            RoomPlayer.room_id == room_id,
+                            RoomPlayer.is_deleted == False
+                        )
+                    )
+                )
+                room_players = result.scalars().all()
+                
+                for room_player in room_players:
+                    room_player.is_deleted = True
+                    room_player.update_time = datetime.utcnow()
+                    logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
+                
+                logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
+            
+            await self.db.commit()
+            
+            # 发送踢出通知给被踢出的用户
+            await self._notify_room_kicked(str(room_id), str(target_user_id))
+            
+            # 根据情况发送不同的通知给其他玩家
+            if db_room.current_players == 0:
+                # 房间空了，发送房间解散通知
+                await self._notify_room_dissolved(str(room_id))
+            else:
+                # 房间还有玩家，发送房间玩家变化通知
+                await self._notify_room_user_update(str(room_id))
+            
+            logger.info(f"玩家踢出成功 - room_id: {room_id}, target_user_id: {target_user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"踢出玩家失败 - room_id: {room_id}, owner_id: {owner_id}, target_user_id: {target_user_id}, 错误: {str(e)}")
+            await self.db.rollback()
+            raise ValueError(f"踢出玩家失败: {str(e)}")
+
     async def _notify_room_update(self, room_id: str) -> None:
         """发送房间更新WebSocket通知"""
         try:
@@ -608,6 +729,19 @@ class RoomService:
             
         except Exception as e:
             logger.error(f"发送房间信息变化通知时发生错误: {str(e)}")
+
+    async def _notify_room_kicked(self, room_id: str, target_user_id: str) -> None:
+        """发送房间踢出通知"""
+        try:
+            # 获取WebSocket连接管理器实例
+            connection_manager = self._get_connection_manager()
+            
+            # 发送房间踢出消息
+            await connection_manager.send_room_kicked(room_id, target_user_id)
+            logger.info(f"房间踢出通知已发送: 房间ID={room_id}, 目标用户ID={target_user_id}")
+            
+        except Exception as e:
+            logger.error(f"发送房间踢出通知时发生错误: {str(e)}")
 
     def _get_connection_manager(self):
         """获取WebSocket连接管理器实例（延迟初始化）"""

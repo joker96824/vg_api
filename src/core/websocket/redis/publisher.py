@@ -180,6 +180,36 @@ class RedisPublisher:
             logger.error(f"发布房间解散消息时发生错误: {str(e)}")
             raise
 
+    async def publish_room_kicked(self, room_id: str, target_user_id: str) -> None:
+        """
+        发布房间踢出消息
+        
+        Args:
+            room_id: 房间ID
+            target_user_id: 被踢出的用户ID
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布房间踢出消息: 房间ID={room_id}, 目标用户ID={target_user_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['private'],
+                json.dumps({
+                    'target_user_id': target_user_id,
+                    'message': {
+                        'type': 'room_kicked',
+                        'room_id': room_id,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                })
+            )
+            logger.info(f"房间踢出消息已发布到 Redis: 房间ID={room_id}, 目标用户ID={target_user_id}")
+            
+        except Exception as e:
+            logger.error(f"发布房间踢出消息时发生错误: {str(e)}")
+            raise
+
     def add_channel(self, name: str, channel: str):
         """
         添加发布频道

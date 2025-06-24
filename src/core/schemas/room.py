@@ -166,4 +166,8 @@ RoomPlayerSuccessResponse = SuccessResponse[RoomPlayerInDB]
 RoomPlayerListSuccessResponse = SuccessResponse[RoomPlayerListResponse]
 RoomPlayersSuccessResponse = SuccessResponse[RoomPlayersResponse]
 UserRoomStatusSuccessResponse = SuccessResponse[UserRoomStatusResponse]
-DeleteSuccessResponse = SuccessResponse[DeleteResponse] 
+DeleteSuccessResponse = SuccessResponse[DeleteResponse]
+
+# 踢出房间请求模型
+class KickPlayerRequest(BaseModel):
+    target_user_id: UUID = Field(..., description="被踢出的用户ID") 

@@ -14,7 +14,8 @@ from src.core.schemas.room import (
     RoomPlayerSuccessResponse, RoomPlayerListSuccessResponse,
     RoomPlayersSuccessResponse, UserRoomStatusSuccessResponse,
     DeleteSuccessResponse, DeleteResponse,
-    ResponseCode, ErrorResponse, RoomCreateRequest
+    ResponseCode, ErrorResponse, RoomCreateRequest,
+    KickPlayerRequest
 )
 from src.core.services.room import RoomService, RoomPlayerService
 from src.core.auth import get_current_user
@@ -547,6 +548,75 @@ async def leave_room(
             detail=ErrorResponse.create(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"离开房间失败: {str(e)}"
+            ).dict()
+        )
+
+
+@router.post("/rooms/{room_id}/kick", response_model=DeleteSuccessResponse, summary="踢出房间玩家")
+async def kick_player(
+    room_id: UUID,
+    kick_request: KickPlayerRequest,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """踢出房间玩家（仅房主可操作）"""
+    try:
+        APILogger.log_request(
+            "踢出房间玩家",
+            房主ID=current_user["id"],
+            房间ID=str(room_id),
+            目标用户ID=str(kick_request.target_user_id)
+        )
+        
+        room_service = RoomService(session)
+        result = await room_service.kick_player(room_id, current_user["id"], kick_request.target_user_id)
+        
+        if not result:
+            APILogger.log_warning(
+                "踢出房间玩家",
+                "踢出失败",
+                房主ID=current_user["id"],
+                房间ID=str(room_id),
+                目标用户ID=str(kick_request.target_user_id)
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.BAD_REQUEST,
+                    message="踢出玩家失败"
+                ).dict()
+            )
+        
+        APILogger.log_response(
+            "踢出房间玩家",
+            房主ID=current_user["id"],
+            房间ID=str(room_id),
+            目标用户ID=str(kick_request.target_user_id)
+        )
+        
+        return DeleteSuccessResponse.create(
+            code=ResponseCode.DELETE_SUCCESS,
+            message="踢出玩家成功",
+            data=DeleteResponse()
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        APILogger.log_error("踢出房间玩家", e, 房主ID=current_user["id"], 房间ID=str(room_id))
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse.create(
+                code=ResponseCode.BAD_REQUEST,
+                message=str(e)
+            ).dict()
+        )
+    except Exception as e:
+        APILogger.log_error("踢出房间玩家", e, 房主ID=current_user["id"], 房间ID=str(room_id))
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"踢出玩家失败: {str(e)}"
             ).dict()
         )
 
