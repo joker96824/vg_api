@@ -20,7 +20,7 @@ from src.core.schemas.room import (
 from src.core.services.room import RoomService, RoomPlayerService
 from src.core.auth import get_current_user
 from src.core.utils.logger import APILogger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from src.core.models.room import Room
 
 router = APIRouter()
@@ -28,6 +28,10 @@ router = APIRouter()
 # 加入房间请求模型
 class JoinRoomRequest(BaseModel):
     pass_word: str = None
+
+# 改变玩家状态请求模型
+class ChangePlayerStatusRequest(BaseModel):
+    status: str = Field(..., description="玩家状态：waiting-等待, ready-准备")
 
 
 @router.post("/rooms", response_model=RoomSuccessResponse, summary="创建房间")
@@ -573,6 +577,77 @@ async def kick_player(
             detail=ErrorResponse.create(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"踢出玩家失败: {str(e)}"
+            ).dict()
+        )
+
+
+@router.put("/rooms/{room_id}/player/status", response_model=RoomPlayerSuccessResponse, summary="改变房间玩家状态")
+async def change_player_status(
+    room_id: UUID,
+    status_request: ChangePlayerStatusRequest,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """改变房间玩家状态（waiting/ready）"""
+    try:
+        APILogger.log_request(
+            "改变玩家状态",
+            用户ID=current_user["id"],
+            房间ID=str(room_id),
+            新状态=status_request.status
+        )
+        
+        room_service = RoomService(session)
+        result = await room_service.change_player_status(room_id, current_user["id"], status_request.status)
+        
+        if not result:
+            APILogger.log_warning(
+                "改变玩家状态",
+                "改变失败",
+                房间ID=str(room_id),
+                用户ID=current_user["id"]
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.PARAM_ERROR,
+                    message="改变玩家状态失败"
+                ).dict()
+            )
+        
+        APILogger.log_response(
+            "改变玩家状态",
+            房间ID=str(room_id),
+            用户ID=current_user["id"],
+            新状态=status_request.status
+        )
+        
+        return RoomPlayerSuccessResponse.create(
+            code=ResponseCode.UPDATE_SUCCESS,
+            message="改变玩家状态成功",
+            data=result
+        )
+    except ValueError as e:
+        APILogger.log_warning(
+            "改变玩家状态",
+            str(e),
+            房间ID=str(room_id),
+            用户ID=current_user["id"]
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse.create(
+                code=ResponseCode.PARAM_ERROR,
+                message=str(e)
+            ).dict()
+        )
+    except Exception as e:
+        APILogger.log_error("改变玩家状态", e, 用户ID=current_user["id"], 房间ID=str(room_id))
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"改变玩家状态失败: {str(e)}"
             ).dict()
         )
 

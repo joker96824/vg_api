@@ -379,7 +379,8 @@ class RoomService:
                 logger.warning(f"用户不在房间中 - room_id: {room_id}, user_id: {user_id}")
                 return False
                 
-            # 更新离开时间
+            # 软删除玩家记录
+            room_player.is_deleted = True
             room_player.leave_time = datetime.utcnow()
             room_player.status = "disconnected"
             room_player.update_time = datetime.utcnow()
@@ -700,6 +701,47 @@ class RoomService:
             logger.error(f"踢出玩家失败 - room_id: {room_id}, owner_id: {owner_id}, target_user_id: {target_user_id}, 错误: {str(e)}")
             await self.db.rollback()
             raise ValueError(f"踢出玩家失败: {str(e)}")
+
+    async def change_player_status(self, room_id: UUID, user_id: UUID, status: str) -> Optional[RoomPlayer]:
+        """改变房间玩家状态"""
+        try:
+            logger.info(f"用户尝试改变状态 - room_id: {room_id}, user_id: {user_id}, status: {status}")
+            
+            # 检查房间是否存在
+            db_room = await self._get_room_for_validation(room_id)
+            if not db_room:
+                logger.warning(f"房间不存在 - room_id: {room_id}")
+                raise ValueError("房间不存在")
+                
+            # 检查用户是否在房间中
+            room_player = await self.get_room_player_by_user(room_id, user_id)
+            if not room_player:
+                logger.warning(f"用户不在房间中 - room_id: {room_id}, user_id: {user_id}")
+                raise ValueError("用户不在房间中")
+                
+            # 验证状态值
+            valid_statuses = ["waiting", "ready"]
+            if status not in valid_statuses:
+                logger.warning(f"无效的状态值 - status: {status}")
+                raise ValueError(f"无效的状态值，只能是: {', '.join(valid_statuses)}")
+                
+            # 更新玩家状态
+            old_status = room_player.status
+            room_player.status = status
+            room_player.update_time = datetime.utcnow()
+            
+            await self.db.commit()
+            
+            # 发送房间玩家变化通知
+            await self._notify_room_user_update(str(room_id))
+            
+            logger.info(f"玩家状态改变成功 - room_id: {room_id}, user_id: {user_id}, 状态: {old_status} -> {status}")
+            return room_player
+            
+        except Exception as e:
+            logger.error(f"改变玩家状态失败 - room_id: {room_id}, user_id: {user_id}, status: {status}, 错误: {str(e)}")
+            await self.db.rollback()
+            raise ValueError(f"改变玩家状态失败: {str(e)}")
 
     async def _notify_room_update(self, room_id: str) -> None:
         """发送房间更新WebSocket通知"""
