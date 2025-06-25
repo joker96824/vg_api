@@ -400,51 +400,7 @@ async def join_room(
         )
         
         room_service = RoomService(session)
-        
-        # 先获取房间信息进行密码验证（直接从数据库查询，不隐藏密码）
-        result = await session.execute(
-            select(Room)
-            .options(selectinload(Room.room_players))
-            .where(
-                and_(
-                    Room.id == room_id,
-                    Room.is_deleted == False
-                )
-            )
-        )
-        room = result.scalar_one_or_none()
-        
-        if not room:
-            APILogger.log_warning(
-                "加入房间",
-                "房间不存在",
-                房间ID=str(room_id)
-            )
-            raise HTTPException(
-                status_code=404,
-                detail=ErrorResponse.create(
-                    code=ResponseCode.NOT_FOUND,
-                    message="房间不存在"
-                ).dict()
-            )
-        
-        # 检查房间是否需要密码
-        if room.pass_word and room.pass_word != room_request.pass_word:
-            APILogger.log_warning(
-                "加入房间",
-                "密码错误",
-                房间ID=str(room_id),
-                用户ID=current_user["id"]
-            )
-            raise HTTPException(
-                status_code=403,
-                detail=ErrorResponse.create(
-                    code=ResponseCode.FORBIDDEN,
-                    message="房间密码错误"
-                ).dict()
-            )
-        
-        result = await room_service.join_room(room_id, current_user["id"])
+        result = await room_service.join_room(room_id, current_user["id"], room_request.pass_word)
         
         if not result:
             APILogger.log_warning(
@@ -456,7 +412,7 @@ async def join_room(
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponse.create(
-                    code=ResponseCode.BAD_REQUEST,
+                    code=ResponseCode.PARAM_ERROR,
                     message="加入房间失败"
                 ).dict()
             )
@@ -483,7 +439,7 @@ async def join_room(
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse.create(
-                code=ResponseCode.BAD_REQUEST,
+                code=ResponseCode.PARAM_ERROR,
                 message=str(e)
             ).dict()
         )
@@ -525,7 +481,7 @@ async def leave_room(
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponse.create(
-                    code=ResponseCode.BAD_REQUEST,
+                    code=ResponseCode.PARAM_ERROR,
                     message="离开房间失败"
                 ).dict()
             )
@@ -582,7 +538,7 @@ async def kick_player(
             raise HTTPException(
                 status_code=400,
                 detail=ErrorResponse.create(
-                    code=ResponseCode.BAD_REQUEST,
+                    code=ResponseCode.PARAM_ERROR,
                     message="踢出玩家失败"
                 ).dict()
             )
@@ -606,7 +562,7 @@ async def kick_player(
         raise HTTPException(
             status_code=400,
             detail=ErrorResponse.create(
-                code=ResponseCode.BAD_REQUEST,
+                code=ResponseCode.PARAM_ERROR,
                 message=str(e)
             ).dict()
         )

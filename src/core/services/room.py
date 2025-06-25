@@ -91,12 +91,26 @@ class RoomService:
         )
         room = result.scalar_one_or_none()
         
-        # 处理密码字段，防止泄露
+        # 临时修改密码字段，防止泄露
         if room and room.pass_word:
-            room.pass_word = "***"
+            room.pass_word = "********"
             logger.debug(f"房间 {room.id} 的密码已隐藏")
         
         return room
+
+    async def _get_room_for_validation(self, room_id: UUID) -> Optional[Room]:
+        """获取房间信息用于密码验证（不隐藏密码）"""
+        result = await self.db.execute(
+            select(Room)
+            .options(selectinload(Room.room_players))
+            .where(
+                and_(
+                    Room.id == room_id,
+                    Room.is_deleted == False
+                )
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def get_rooms(self, params: RoomQueryParams, user_id: UUID) -> Tuple[int, List[Room]]:
         """获取房间列表"""
@@ -174,10 +188,10 @@ class RoomService:
             rooms = result.scalars().all()
             logger.info(f"查询房间结果数量: {len(rooms)}")
 
-            # 处理密码字段，防止泄露
+            # 临时修改密码字段，防止泄露
             for room in rooms:
                 if room.pass_word:
-                    room.pass_word = "***"
+                    room.pass_word = "********"
                     logger.debug(f"房间 {room.id} 的密码已隐藏")
 
             return total, rooms
@@ -191,7 +205,7 @@ class RoomService:
         try:
             logger.info(f"开始更新房间 - room_id: {room_id}")
             
-            db_room = await self.get_room(room_id)
+            db_room = await self._get_room_for_validation(room_id)
             if not db_room:
                 logger.warning(f"未找到房间 - room_id: {room_id}")
                 return None
@@ -222,7 +236,7 @@ class RoomService:
         try:
             logger.info(f"开始删除房间 - room_id: {room_id}")
             
-            db_room = await self.get_room(room_id)
+            db_room = await self._get_room_for_validation(room_id)
             if not db_room:
                 logger.warning(f"房间不存在 - room_id: {room_id}")
                 return False
@@ -261,13 +275,13 @@ class RoomService:
             await self.db.rollback()
             raise ValueError(f"删除房间失败: {str(e)}")
 
-    async def join_room(self, room_id: UUID, user_id: UUID) -> Optional[RoomPlayer]:
+    async def join_room(self, room_id: UUID, user_id: UUID, password: str = None) -> Optional[RoomPlayer]:
         """加入房间"""
         try:
             logger.info(f"用户尝试加入房间 - room_id: {room_id}, user_id: {user_id}")
             
-            # 检查房间是否存在
-            db_room = await self.get_room(room_id)
+            # 检查房间是否存在（获取真实密码用于验证）
+            db_room = await self._get_room_for_validation(room_id)
             if not db_room:
                 logger.warning(f"房间不存在 - room_id: {room_id}")
                 return None
@@ -281,6 +295,15 @@ class RoomService:
             if db_room.current_players >= db_room.max_players:
                 logger.warning(f"房间已满 - room_id: {room_id}, current: {db_room.current_players}, max: {db_room.max_players}")
                 raise ValueError("房间已满")
+                
+            # 检查密码
+            if db_room.pass_word:
+                if not password:
+                    logger.warning(f"房间需要密码但用户未提供 - room_id: {room_id}")
+                    raise ValueError("房间需要密码")
+                if db_room.pass_word != password:
+                    logger.warning(f"房间密码错误 - room_id: {room_id}")
+                    raise ValueError("房间密码错误")
                 
             # 检查用户是否已在房间中（未删除的记录）
             existing_player = await self.get_room_player_by_user(room_id, user_id)
@@ -362,7 +385,7 @@ class RoomService:
             room_player.update_time = datetime.utcnow()
             
             # 更新房间当前玩家数
-            db_room = await self.get_room(room_id)
+            db_room = await self._get_room_for_validation(room_id)
             if db_room:
                 db_room.current_players = max(0, db_room.current_players - 1)
                 db_room.update_time = datetime.utcnow()
@@ -602,7 +625,7 @@ class RoomService:
             logger.info(f"房主尝试踢出玩家 - room_id: {room_id}, owner_id: {owner_id}, target_user_id: {target_user_id}")
             
             # 检查房间是否存在
-            db_room = await self.get_room(room_id)
+            db_room = await self._get_room_for_validation(room_id)
             if not db_room:
                 logger.warning(f"房间不存在 - room_id: {room_id}")
                 raise ValueError("房间不存在")
