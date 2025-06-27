@@ -270,6 +270,36 @@ class RedisPublisher:
             logger.error(f"发布匹配确认消息时发生错误: {str(e)}")
             raise
 
+    async def publish_match_timeout(self, user_id: str, timeout_data: Dict[str, Any]) -> None:
+        """
+        发布匹配超时消息
+        
+        Args:
+            user_id: 用户ID
+            timeout_data: 超时数据，包含超时消息等
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布匹配超时消息: 用户ID={user_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['private'],
+                json.dumps({
+                    'target_user_id': user_id,
+                    'message': {
+                        'type': 'match_timeout',
+                        'data': timeout_data,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                })
+            )
+            logger.info(f"匹配超时消息已发布到 Redis: 用户ID={user_id}")
+            
+        except Exception as e:
+            logger.error(f"发布匹配超时消息时发生错误: {str(e)}")
+            raise
+
     def add_channel(self, name: str, channel: str):
         """
         添加发布频道

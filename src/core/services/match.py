@@ -1,7 +1,7 @@
 import json
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 import uuid
@@ -12,6 +12,7 @@ from sqlalchemy import select
 from ..utils.redis import set_key, get_key, delete_key, key_exists
 from ..models.room import Room
 from ..models.room_player import RoomPlayer
+from ..models.deck import Deck
 from ..schemas.room import RoomCreate
 
 logger = logging.getLogger(__name__)
@@ -23,8 +24,36 @@ class MatchService:
         self.db = db
         self.match_queue_key = "match_queue"
         self.match_timeout = 1800  # 匹配超时时间（30分钟）
+        self.confirmation_timeout = 30  # 确认超时时间（30秒）
         self.pending_matches_key = "pending_matches"  # 待确认的匹配
+        self._timeout_check_task = None
         
+        # 启动超时检查任务
+        self._start_timeout_check_task()
+        
+    def _start_timeout_check_task(self):
+        """启动超时检查任务"""
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                self._timeout_check_task = asyncio.create_task(self._timeout_check_loop())
+                logger.info("超时检查任务已启动")
+        except Exception as e:
+            logger.error(f"启动超时检查任务失败: {str(e)}")
+    
+    async def _timeout_check_loop(self):
+        """超时检查循环"""
+        while True:
+            try:
+                await self._check_expired_matches()
+                await asyncio.sleep(10)  # 每10秒检查一次
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"超时检查循环中发生错误: {str(e)}")
+                await asyncio.sleep(10)  # 发生错误时等待10秒后继续
+    
     async def join_match_queue(self, user_id: UUID, user_info: Dict[str, Any]) -> Dict[str, Any]:
         """加入匹配队列"""
         try:
@@ -48,6 +77,16 @@ class MatchService:
                     "match_id": None
                 }
             
+            # 检查用户是否有出战卡组
+            battle_deck = await self._get_user_battle_deck(user_id)
+            if not battle_deck:
+                logger.warning(f"用户没有出战卡组 - user_id: {user_id}")
+                return {
+                    "success": False,
+                    "message": "没有出战卡组",
+                    "match_id": None
+                }
+            
             # 生成匹配ID
             match_id = str(uuid.uuid4())
             
@@ -56,7 +95,8 @@ class MatchService:
                 "user_id": str(user_id),
                 "match_id": match_id,
                 "join_time": datetime.utcnow().isoformat(),
-                "user_info": user_info
+                "user_info": user_info,
+                "deck_id": str(battle_deck.id)  # 使用出战卡组ID
             }
             
             # 将用户加入匹配队列
@@ -104,6 +144,31 @@ class MatchService:
                 return {
                     "success": False,
                     "message": "匹配已过期或不存在"
+                }
+            
+            # 检查expire_time字段是否存在
+            if "expire_time" not in pending_match:
+                logger.error(f"匹配信息缺少expire_time字段 - match_id: {match_id}, pending_match: {pending_match}")
+                return {
+                    "success": False,
+                    "message": "匹配信息格式错误"
+                }
+            
+            # 检查是否超时
+            try:
+                expire_time = datetime.fromisoformat(pending_match["expire_time"])
+                if datetime.utcnow() > expire_time:
+                    # 匹配已超时，处理超时逻辑
+                    await self._handle_match_timeout(match_id)
+                    return {
+                        "success": False,
+                        "message": "匹配已超时"
+                    }
+            except (ValueError, TypeError) as e:
+                logger.error(f"解析expire_time失败 - match_id: {match_id}, expire_time: {pending_match.get('expire_time')}, 错误: {str(e)}")
+                return {
+                    "success": False,
+                    "message": "匹配信息格式错误"
                 }
             
             # 检查用户是否在匹配中
@@ -265,37 +330,38 @@ class MatchService:
         """清理过期的匹配记录"""
         try:
             logger.info("开始清理过期的匹配记录")
+            
+            # 清理确认超时的匹配
+            await self._check_expired_matches()
+            
+            # 清理长时间在队列中的匹配
             queue_info = await self._get_queue_info()
             current_time = datetime.utcnow()
-            
-            # 过滤掉过期的匹配记录
-            valid_matches = []
             cleaned_count = 0
+            
+            # 过滤掉超时的匹配
+            valid_matches = []
             for match_info in queue_info:
                 join_time = datetime.fromisoformat(match_info["join_time"])
                 if (current_time - join_time).total_seconds() < self.match_timeout:
                     valid_matches.append(match_info)
                 else:
-                    logger.info(f"清理过期匹配记录 - user_id: {match_info['user_id']}")
                     cleaned_count += 1
+                    logger.info(f"清理过期匹配 - user_id: {match_info['user_id']}")
             
-            if cleaned_count > 0:
-                await self._save_queue_info(valid_matches)
-                logger.info(f"清理了 {cleaned_count} 条过期匹配记录")
-                return {
-                    "success": True,
-                    "message": f"清理了 {cleaned_count} 条过期匹配记录",
-                    "cleaned_count": cleaned_count
-                }
-            else:
-                return {
-                    "success": True,
-                    "message": "没有过期的匹配记录",
-                    "cleaned_count": 0
-                }
-                
+            # 保存清理后的队列
+            await self._save_queue_info(valid_matches)
+            
+            logger.info(f"过期匹配清理完成 - 清理数量: {cleaned_count}")
+            
+            return {
+                "success": True,
+                "message": f"清理完成，共清理 {cleaned_count} 条过期记录",
+                "cleaned_count": cleaned_count
+            }
+            
         except Exception as e:
-            logger.error(f"清理过期匹配记录时发生错误: {str(e)}")
+            logger.error(f"清理过期匹配记录失败: {str(e)}")
             return {
                 "success": False,
                 "message": f"清理过期匹配记录失败: {str(e)}"
@@ -422,7 +488,8 @@ class MatchService:
                 "match_id": match_id,
                 "users": matched_users,
                 "confirmations": {},
-                "create_time": datetime.utcnow().isoformat()
+                "create_time": datetime.utcnow().isoformat(),
+                "expire_time": (datetime.utcnow() + timedelta(seconds=self.confirmation_timeout)).isoformat()
             }
             await self._save_pending_match(match_id, pending_match)
             
@@ -430,12 +497,21 @@ class MatchService:
             from ..websocket.connection_manager import ConnectionManager
             connection_manager = ConnectionManager()
             
+            # 构建匹配用户信息，包含user_id和avatar
+            matched_users_info = []
+            for user_info in matched_users:
+                matched_users_info.append({
+                    "user_id": user_info["user_id"],
+                    "nickname": user_info["user_info"].get("nickname", ""),
+                    "avatar": user_info["user_info"].get("avatar", "")
+                })
+            
             # 为每个匹配的用户发送确认通知
             for user_info in matched_users:
                 user_id = user_info["user_id"]
                 await connection_manager.send_match_confirmation(user_id, {
                     "match_id": match_id,
-                    "matched_users": matched_users
+                    "matched_users": matched_users_info  # 包含user_id和avatar的完整信息
                 })
             
             logger.info(f"匹配确认通知已发送 - match_id: {match_id}")
@@ -447,26 +523,42 @@ class MatchService:
         """保存待确认的匹配信息"""
         pending_matches = await self._get_pending_matches()
         pending_matches[match_id] = pending_match
-        set_key(self.pending_matches_key, json.dumps(pending_matches), expire=self.match_timeout)
+        set_key(self.pending_matches_key, json.dumps(pending_matches), expire=self.confirmation_timeout)
     
     async def _get_pending_matches(self) -> Dict[str, Any]:
         """获取所有待确认的匹配"""
-        data = get_key(self.pending_matches_key)
-        if data:
-            return json.loads(data)
-        return {}
+        try:
+            data = get_key(self.pending_matches_key)
+            if data:
+                try:
+                    return json.loads(data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"解析待确认匹配数据失败: {str(e)}, 原始数据: {data}")
+                    return {}
+            return {}
+        except Exception as e:
+            logger.error(f"获取待确认匹配失败: {str(e)}")
+            return {}
     
     async def _get_pending_match(self, match_id: str) -> Optional[Dict[str, Any]]:
         """获取指定的待确认匹配"""
         pending_matches = await self._get_pending_matches()
-        return pending_matches.get(match_id)
+        logger.debug(f"获取待确认匹配 - match_id: {match_id}, 所有匹配: {pending_matches}")
+        
+        if match_id in pending_matches:
+            match_info = pending_matches[match_id]
+            logger.debug(f"找到匹配信息 - match_id: {match_id}, match_info: {match_info}")
+            return match_info
+        else:
+            logger.debug(f"未找到匹配信息 - match_id: {match_id}")
+            return None
     
     async def _update_user_confirmation(self, match_id: str, user_id: UUID, confirm: bool):
         """更新用户确认状态"""
         pending_matches = await self._get_pending_matches()
         if match_id in pending_matches:
             pending_matches[match_id]["confirmations"][str(user_id)] = confirm
-            set_key(self.pending_matches_key, json.dumps(pending_matches), expire=self.match_timeout)
+            set_key(self.pending_matches_key, json.dumps(pending_matches), expire=self.confirmation_timeout)
     
     async def _check_all_confirmed(self, match_id: str) -> bool:
         """检查是否所有人都确认了"""
@@ -523,7 +615,99 @@ class MatchService:
         pending_matches = await self._get_pending_matches()
         if match_id in pending_matches:
             del pending_matches[match_id]
-            set_key(self.pending_matches_key, json.dumps(pending_matches), expire=self.match_timeout)
+            set_key(self.pending_matches_key, json.dumps(pending_matches), expire=self.confirmation_timeout)
+    
+    async def _check_expired_matches(self):
+        """检查并处理超时的匹配"""
+        try:
+            pending_matches = await self._get_pending_matches()
+            current_time = datetime.utcnow()
+            expired_matches = []
+            
+            for match_id, match_info in pending_matches.items():
+                try:
+                    # 检查expire_time字段是否存在
+                    if "expire_time" not in match_info:
+                        logger.error(f"匹配信息缺少expire_time字段 - match_id: {match_id}, match_info: {match_info}")
+                        expired_matches.append(match_id)
+                        continue
+                    
+                    expire_time = datetime.fromisoformat(match_info["expire_time"])
+                    if current_time > expire_time:
+                        expired_matches.append(match_id)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"解析expire_time失败 - match_id: {match_id}, expire_time: {match_info.get('expire_time')}, 错误: {str(e)}")
+                    expired_matches.append(match_id)
+            
+            # 处理超时的匹配
+            for match_id in expired_matches:
+                await self._handle_match_timeout(match_id)
+                
+        except Exception as e:
+            logger.error(f"检查超时匹配时发生错误: {str(e)}")
+    
+    async def _handle_match_timeout(self, match_id: str):
+        """处理匹配超时"""
+        try:
+            pending_match = await self._get_pending_match(match_id)
+            if not pending_match:
+                return
+            
+            logger.info(f"处理匹配超时 - match_id: {match_id}")
+            
+            # 获取所有用户
+            users = pending_match["users"]
+            confirmations = pending_match.get("confirmations", {})
+            
+            # 找出未响应的用户和已确认的用户
+            unresponsive_users = []
+            confirmed_users = []
+            
+            for user in users:
+                user_id = user["user_id"]
+                if user_id not in confirmations:
+                    # 未响应的用户
+                    unresponsive_users.append(user)
+                elif confirmations[user_id]:
+                    # 已确认的用户
+                    confirmed_users.append(user)
+            
+            # 将已确认的用户重新加入队列（排在前面）
+            if confirmed_users:
+                queue_info = await self._get_queue_info()
+                # 将已确认的用户插入到队列前面
+                queue_info = confirmed_users + queue_info
+                await self._save_queue_info(queue_info)
+                
+                logger.info(f"超时匹配中已确认的用户已重新加入队列 - users: {[u['user_id'] for u in confirmed_users]}")
+                
+                # 通知已确认的用户匹配超时
+                await self._notify_match_timeout(confirmed_users)
+            
+            # 移除待确认的匹配
+            await self._remove_pending_match(match_id)
+            
+        except Exception as e:
+            logger.error(f"处理匹配超时时发生错误: {str(e)}")
+    
+    async def _notify_match_timeout(self, confirmed_users: List[Dict[str, Any]]):
+        """通知匹配超时"""
+        try:
+            # 获取WebSocket连接管理器实例
+            from ..websocket.connection_manager import ConnectionManager
+            connection_manager = ConnectionManager()
+            
+            # 为每个已确认的用户发送超时通知
+            for user_info in confirmed_users:
+                user_id = user_info["user_id"]
+                await connection_manager.send_match_timeout(user_id, {
+                    "message": "匹配超时，已重新加入队列"
+                })
+            
+            logger.info(f"匹配超时通知已发送 - users: {[u['user_id'] for u in confirmed_users]}")
+            
+        except Exception as e:
+            logger.error(f"发送匹配超时通知时发生错误: {str(e)}")
     
     async def _create_room_from_confirmed_match(self, match_id: str) -> Dict[str, Any]:
         """根据确认的匹配创建房间"""
@@ -535,18 +719,46 @@ class MatchService:
             users = pending_match["users"]
             logger.info(f"根据确认的匹配创建房间 - 用户: {[user['user_id'] for user in users]}")
             
+            # 验证所有用户的出战卡组是否仍然有效
+            valid_users = []
+            for user_info in users:
+                user_id = UUID(user_info["user_id"])
+                battle_deck = await self._get_user_battle_deck(user_id)
+                if battle_deck:
+                    # 更新匹配信息中的卡组ID，确保使用最新的出战卡组
+                    user_info["deck_id"] = str(battle_deck.id)
+                    valid_users.append(user_info)
+                else:
+                    logger.warning(f"用户出战卡组无效 - user_id: {user_id}")
+            
+            if len(valid_users) < 2:
+                raise ValueError("匹配用户中有人没有有效的出战卡组")
+            
             # 创建房间
             room_name = f"匹配房间_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            owner_id = UUID(valid_users[0]["user_id"])  # 第一个用户作为房主
+            
+            # 默认游戏设置
+            default_game_settings = {
+                "time_limit": 30,  # 30秒时间限制
+                "max_turns": 50,   # 最大回合数
+                "starting_hand": 5, # 起始手牌数
+                "trigger_check": True, # 触发检查
+                "auto_guard": False   # 自动防御
+            }
+            
             db_room = Room(
                 room_name=room_name,
                 room_type="public",
-                status="waiting",
+                status="loading",  # 改为loading状态
                 max_players=2,
                 current_players=2,
                 game_mode="standard",
-                game_settings={},
+                game_settings=default_game_settings,
                 pass_word=None,
-                created_by=UUID(users[0]["user_id"]),  # 第一个用户作为房主
+                created_by=owner_id,
+                create_user_id=owner_id,  # 设置创建用户ID
+                update_user_id=owner_id,  # 设置更新用户ID
                 remark="自动匹配创建的房间"
             )
             self.db.add(db_room)
@@ -556,15 +768,19 @@ class MatchService:
             logger.info(f"房间创建成功 - room_id: {db_room.id}")
             
             # 添加玩家到房间
-            for i, user_info in enumerate(users):
+            for i, user_info in enumerate(valid_users):
                 user_id = UUID(user_info["user_id"])
+                deck_id = UUID(user_info["deck_id"]) if user_info.get("deck_id") else None
                 room_player = RoomPlayer(
                     room_id=db_room.id,
                     user_id=user_id,
                     player_order=i + 1,
-                    status="waiting",
+                    status="loading",  # 改为loading状态
+                    deck_id=deck_id,   # 使用匹配信息中的卡组ID
                     join_time=datetime.utcnow(),
-                    remark=""
+                    create_user_id=user_id,  # 设置创建用户ID
+                    update_user_id=user_id,  # 设置更新用户ID
+                    remark="匹配加入"
                 )
                 self.db.add(room_player)
             
@@ -573,12 +789,12 @@ class MatchService:
             logger.info(f"玩家已添加到房间 - room_id: {db_room.id}")
             
             # 发送房间创建通知
-            await self._notify_room_created(str(db_room.id), users)
+            await self._notify_room_created(str(db_room.id), valid_users)
             
             return {
                 "room_id": db_room.id,
                 "room_name": db_room.room_name,
-                "matched_users": users
+                "matched_users": valid_users
             }
             
         except Exception as e:
@@ -605,4 +821,21 @@ class MatchService:
             logger.info(f"匹配成功通知已发送 - room_id: {room_id}")
             
         except Exception as e:
-            logger.error(f"发送匹配成功通知时发生错误: {str(e)}") 
+            logger.error(f"发送匹配成功通知时发生错误: {str(e)}")
+    
+    async def _get_user_battle_deck(self, user_id: UUID) -> Optional[Deck]:
+        """获取用户的出战卡组（preset=0的卡组）"""
+        try:
+            result = await self.db.execute(
+                select(Deck)
+                .where(
+                    Deck.user_id == user_id,
+                    Deck.preset == 0,
+                    Deck.is_deleted == False,
+                    Deck.is_valid == True  # 确保卡组合规
+                )
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"获取用户出战卡组失败 - user_id: {user_id}, 错误: {str(e)}")
+            return None 

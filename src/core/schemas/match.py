@@ -18,7 +18,14 @@ class MatchResultResponse(BaseModel):
     match_id: str = Field(..., description="匹配ID")
     room_id: Optional[str] = Field(None, description="房间ID")
     room_name: Optional[str] = Field(None, description="房间名称")
-    matched_users: Optional[List[Dict[str, Any]]] = Field(None, description="匹配到的用户列表")
+    matched_users: Optional[List[Dict[str, Any]]] = Field(None, description="匹配到的用户列表，包含user_id、nickname、avatar")
+
+# 匹配用户信息模型
+class MatchedUserInfo(BaseModel):
+    """匹配用户信息模型"""
+    user_id: str = Field(..., description="用户ID")
+    nickname: str = Field(..., description="用户昵称")
+    avatar: Optional[str] = Field(None, description="用户头像")
 
 # 确认匹配响应模型
 class ConfirmMatchResponse(BaseModel):

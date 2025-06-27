@@ -1,7 +1,8 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
+from uuid import UUID
 
 from src.core.deps import get_db
 from src.core.auth import get_current_user, require_admin
@@ -43,7 +44,10 @@ async def join_match_queue(
         }
         
         match_service = MatchService(session)
-        result = await match_service.join_match_queue(current_user["id"], user_info)
+        result = await match_service.join_match_queue(
+            current_user["id"], 
+            user_info
+        )
         
         if not result["success"]:
             APILogger.log_warning(
