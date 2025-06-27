@@ -7,8 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.deps import get_db
 from src.core.models.user import User
+from src.core.services.match import MatchService
 import os
+import logging
 
+logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
 async def get_current_user(
@@ -30,6 +33,19 @@ async def get_current_user(
                 detail="无效的认证信息"
             )
     except JWTError:
+        # 尝试从token中提取用户ID来取消匹配
+        try:
+            # 不验证签名，只解码获取用户ID
+            payload = jwt.decode(
+                credentials.credentials,
+                options={"verify_signature": False}
+            )
+            user_id = payload.get("sub")
+            if user_id:
+                await _cancel_user_match(user_id)
+        except:
+            pass  # 如果无法解析token，忽略错误
+        
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="无效的认证信息"
@@ -41,6 +57,8 @@ async def get_current_user(
     user = result.scalar_one_or_none()
 
     if user is None:
+        # 用户不存在，取消匹配
+        await _cancel_user_match(user_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户不存在或已被删除"
@@ -54,6 +72,24 @@ async def get_current_user(
         "level": user.level,
         "avatar": user.avatar
     }
+
+async def _cancel_user_match(user_id: str):
+    """取消用户匹配状态"""
+    try:
+        # 获取数据库会话
+        async for session in get_db():
+            try:
+                match_service = MatchService(session)
+                result = await match_service.cancel_user_match(user_id)
+                if result["success"]:
+                    logger.info(f"用户登录失效，已自动取消匹配 - user_id: {user_id}")
+                break
+            except Exception as e:
+                logger.error(f"取消用户匹配时发生错误 - user_id: {user_id}, 错误: {str(e)}")
+            finally:
+                await session.close()
+    except Exception as e:
+        logger.error(f"获取数据库会话失败: {str(e)}")
 
 def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """验证管理员权限"""

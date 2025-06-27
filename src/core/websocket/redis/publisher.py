@@ -210,6 +210,66 @@ class RedisPublisher:
             logger.error(f"发布房间踢出消息时发生错误: {str(e)}")
             raise
 
+    async def publish_match_success(self, user_id: str, match_data: Dict[str, Any]) -> None:
+        """
+        发布匹配成功消息
+        
+        Args:
+            user_id: 用户ID
+            match_data: 匹配数据，包含房间信息等
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布匹配成功消息: 用户ID={user_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['private'],
+                json.dumps({
+                    'target_user_id': user_id,
+                    'message': {
+                        'type': 'match_success',
+                        'data': match_data,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                })
+            )
+            logger.info(f"匹配成功消息已发布到 Redis: 用户ID={user_id}")
+            
+        except Exception as e:
+            logger.error(f"发布匹配成功消息时发生错误: {str(e)}")
+            raise
+
+    async def publish_match_confirmation(self, user_id: str, match_data: Dict[str, Any]) -> None:
+        """
+        发布匹配确认消息
+        
+        Args:
+            user_id: 用户ID
+            match_data: 匹配数据，包含match_id和matched_users等
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布匹配确认消息: 用户ID={user_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['private'],
+                json.dumps({
+                    'target_user_id': user_id,
+                    'message': {
+                        'type': 'match_confirmation',
+                        'data': match_data,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                })
+            )
+            logger.info(f"匹配确认消息已发布到 Redis: 用户ID={user_id}")
+            
+        except Exception as e:
+            logger.error(f"发布匹配确认消息时发生错误: {str(e)}")
+            raise
+
     def add_channel(self, name: str, channel: str):
         """
         添加发布频道

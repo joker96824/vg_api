@@ -365,6 +365,76 @@ class ConnectionManager:
         except Exception as e:
             logger.error(f"发送房间踢出消息时发生错误: {str(e)}")
             return False
+
+    async def send_match_success(self, user_id: str, match_data: Dict[str, Any]) -> bool:
+        """
+        发送匹配成功消息给指定用户
+        
+        Args:
+            user_id: 用户ID
+            match_data: 匹配数据，包含房间信息等
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            # 检查目标用户是否在当前实例
+            if user_id in self.connections:
+                # 用户在当前实例，直接发送
+                logger.info(f"匹配成功用户 {user_id} 在当前实例，直接发送匹配成功消息")
+                message = {
+                    "type": "match_success",
+                    "data": match_data,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                return await self.send_message(
+                    self.connections[user_id]["websocket"],
+                    message
+                )
+            else:
+                # 用户不在当前实例，通过Redis发送
+                logger.info(f"匹配成功用户 {user_id} 不在当前实例，通过Redis发送匹配成功消息")
+                await self.redis_publisher.publish_match_success(user_id, match_data)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送匹配成功消息时发生错误: {str(e)}")
+            return False
+    
+    async def send_match_confirmation(self, user_id: str, match_data: Dict[str, Any]) -> bool:
+        """
+        发送匹配确认通知给指定用户
+        
+        Args:
+            user_id: 用户ID
+            match_data: 匹配数据，包含match_id和matched_users等
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            # 检查目标用户是否在当前实例
+            if user_id in self.connections:
+                # 用户在当前实例，直接发送
+                logger.info(f"匹配确认用户 {user_id} 在当前实例，直接发送匹配确认消息")
+                message = {
+                    "type": "match_confirmation",
+                    "data": match_data,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                return await self.send_message(
+                    self.connections[user_id]["websocket"],
+                    message
+                )
+            else:
+                # 用户不在当前实例，通过Redis发送
+                logger.info(f"匹配确认用户 {user_id} 不在当前实例，通过Redis发送匹配确认消息")
+                await self.redis_publisher.publish_match_confirmation(user_id, match_data)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送匹配确认消息时发生错误: {str(e)}")
+            return False
             
     async def _get_room_players_in_instance(self, room_id: str) -> list:
         """
