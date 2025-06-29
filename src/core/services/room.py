@@ -743,6 +743,128 @@ class RoomService:
             await self.db.rollback()
             raise ValueError(f"改变玩家状态失败: {str(e)}")
 
+    async def start_game_loading(self, room_id: UUID, user_id: UUID) -> bool:
+        """开始游戏加载"""
+        try:
+            logger.info(f"用户尝试开始游戏加载 - room_id: {room_id}, user_id: {user_id}")
+            
+            # 检查房间是否存在
+            db_room = await self._get_room_for_validation(room_id)
+            if not db_room:
+                logger.warning(f"房间不存在 - room_id: {room_id}")
+                raise ValueError("房间不存在")
+                
+            # 检查房间状态
+            if db_room.status != "waiting":
+                logger.warning(f"房间状态不允许开始游戏加载 - room_id: {room_id}, status: {db_room.status}")
+                raise ValueError("房间状态不允许开始游戏加载")
+                
+            # 检查用户是否是房主
+            room_player = await self.get_room_player_by_user(room_id, user_id)
+            if not room_player:
+                logger.warning(f"用户不在房间中 - room_id: {room_id}, user_id: {user_id}")
+                raise ValueError("用户不在房间中")
+                
+            if room_player.player_order != 1:
+                logger.warning(f"只有房主可以开始游戏加载 - room_id: {room_id}, user_id: {user_id}, player_order: {room_player.player_order}")
+                raise ValueError("只有房主可以开始游戏加载")
+                
+            # 获取房间中的所有玩家
+            result = await self.db.execute(
+                select(RoomPlayer)
+                .where(
+                    and_(
+                        RoomPlayer.room_id == room_id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+                .order_by(RoomPlayer.player_order)
+            )
+            room_players = result.scalars().all()
+            
+            # 检查所有玩家状态是否为ready
+            for player in room_players:
+                # 跳过房主的状态检查
+                if player.player_order == 1:
+                    continue
+                    
+                if player.status != "ready":
+                    logger.warning(f"玩家状态不是ready - room_id: {room_id}, user_id: {player.user_id}, status: {player.status}")
+                    raise ValueError(f"玩家 {player.user_id} 状态不是ready，无法开始游戏加载")
+                    
+            # 检查所有玩家的preset=0卡组
+            from .deck import DeckService
+            deck_service = DeckService(self.db)
+            
+            for player in room_players:
+                # 获取用户的preset=0卡组
+                battle_deck = await self._get_user_battle_deck(player.user_id)
+                if not battle_deck:
+                    logger.warning(f"用户没有preset=0的卡组 - user_id: {player.user_id}")
+                    raise ValueError(f"玩家 {player.user_id} 没有出战卡组")
+                    
+                # 检查卡组合规性
+                is_valid, problems = await deck_service.check_deck_validity(battle_deck.id)
+                if not is_valid:
+                    logger.warning(f"用户卡组不合规 - user_id: {player.user_id}, problems: {problems}")
+                    raise ValueError(f"玩家 {player.user_id} 的卡组不合规: {'; '.join(problems)}")
+                    
+                # 更新房间玩家记录中的卡组ID
+                player.deck_id = battle_deck.id
+                player.update_time = datetime.utcnow()
+                
+            # 更新房间状态为loading
+            db_room.status = "loading"
+            db_room.update_time = datetime.utcnow()
+            
+            # 更新所有玩家状态为loading
+            for player in room_players:
+                player.status = "loading"
+                player.update_time = datetime.utcnow()
+                
+            await self.db.commit()
+            
+            # 发送游戏加载通知
+            await self._notify_game_loading(str(room_id))
+            
+            logger.info(f"游戏加载开始成功 - room_id: {room_id}, user_id: {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"开始游戏加载失败 - room_id: {room_id}, user_id: {user_id}, 错误: {str(e)}")
+            await self.db.rollback()
+            raise ValueError(f"开始游戏加载失败: {str(e)}")
+
+    async def _get_user_battle_deck(self, user_id: UUID) -> Optional[Deck]:
+        """获取用户的出战卡组（preset=0的卡组）"""
+        try:
+            result = await self.db.execute(
+                select(Deck)
+                .where(
+                    Deck.user_id == user_id,
+                    Deck.preset == 0,
+                    Deck.is_deleted == False,
+                    Deck.is_valid == True  # 确保卡组合规
+                )
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"获取用户出战卡组失败 - user_id: {user_id}, 错误: {str(e)}")
+            return None
+
+    async def _notify_game_loading(self, room_id: str) -> None:
+        """发送游戏加载通知"""
+        try:
+            # 获取WebSocket连接管理器实例
+            connection_manager = self._get_connection_manager()
+            
+            # 发送游戏加载消息
+            await connection_manager.send_game_loading(room_id)
+            logger.info(f"游戏加载通知已发送: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发送游戏加载通知时发生错误: {str(e)}")
+
     async def _notify_room_update(self, room_id: str) -> None:
         """发送房间更新WebSocket通知"""
         try:

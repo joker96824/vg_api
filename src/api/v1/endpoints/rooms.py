@@ -703,4 +703,72 @@ async def get_room_players(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"获取房间玩家信息失败: {str(e)}"
             ).dict()
+        )
+
+
+@router.post("/rooms/{room_id}/loading", response_model=DeleteSuccessResponse, summary="开始游戏加载")
+async def start_game_loading(
+    room_id: UUID,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """开始游戏加载（仅房主可操作）"""
+    try:
+        APILogger.log_request(
+            "开始游戏加载",
+            房主ID=current_user["id"],
+            房间ID=str(room_id)
+        )
+        
+        room_service = RoomService(session)
+        result = await room_service.start_game_loading(room_id, current_user["id"])
+        
+        if not result:
+            APILogger.log_warning(
+                "开始游戏加载",
+                "开始失败",
+                房主ID=current_user["id"],
+                房间ID=str(room_id)
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.PARAM_ERROR,
+                    message="开始游戏加载失败"
+                ).dict()
+            )
+        
+        APILogger.log_response(
+            "开始游戏加载",
+            房主ID=current_user["id"],
+            房间ID=str(room_id)
+        )
+        
+        return DeleteSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="游戏加载开始成功",
+            data=DeleteResponse()
+        )
+    except ValueError as e:
+        APILogger.log_warning(
+            "开始游戏加载",
+            str(e),
+            房主ID=current_user["id"],
+            房间ID=str(room_id)
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse.create(
+                code=ResponseCode.PARAM_ERROR,
+                message=str(e)
+            ).dict()
+        )
+    except Exception as e:
+        APILogger.log_error("开始游戏加载", e, 房主ID=current_user["id"], 房间ID=str(room_id))
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"开始游戏加载失败: {str(e)}"
+            ).dict()
         ) 

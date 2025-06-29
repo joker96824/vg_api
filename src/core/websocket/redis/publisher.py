@@ -180,6 +180,31 @@ class RedisPublisher:
             logger.error(f"发布房间解散消息时发生错误: {str(e)}")
             raise
 
+    async def publish_game_loading(self, room_id: str) -> None:
+        """
+        发布游戏加载消息
+        
+        Args:
+            room_id: 房间ID
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布游戏加载消息: 房间ID={room_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['room_update'],
+                json.dumps({
+                    'room_id': room_id,
+                    'message_type': 'game_loading'
+                })
+            )
+            logger.info(f"游戏加载消息已发布到 Redis: 房间ID={room_id}")
+            
+        except Exception as e:
+            logger.error(f"发布游戏加载消息时发生错误: {str(e)}")
+            raise
+
     async def publish_room_kicked(self, room_id: str, target_user_id: str) -> None:
         """
         发布房间踢出消息
