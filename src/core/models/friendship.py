@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, String, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from ..database import Base
+from src.core.database import Base
 
 class Friendship(Base):
     """好友关系模型"""

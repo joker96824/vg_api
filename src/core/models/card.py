@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from .database import Base
+from src.core.database import Base
 
 
 class CardType(str, enum.Enum):

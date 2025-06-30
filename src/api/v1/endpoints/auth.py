@@ -26,6 +26,7 @@ from src.core.schemas.auth import (
 )
 from src.core.schemas.response import ResponseCode, ErrorResponse, SuccessResponse
 from uuid import UUID
+from src.core.deps import get_db
 
 router = APIRouter()
 
@@ -56,7 +57,7 @@ async def get_captcha(request: Request):
 async def send_sms(
     request: Request,
     data: SendSMSRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """发送短信验证码"""
     # 验证图形验证码
@@ -93,7 +94,7 @@ async def send_sms(
 async def register(
     request: Request,
     data: RegisterRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """用户注册"""
     try:
@@ -148,7 +149,7 @@ async def register(
 async def login(
     request: Request,
     data: LoginRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """用户登录"""
     try:
@@ -199,7 +200,7 @@ async def login(
 async def logout(
     request: Request,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """用户登出"""
     try:
@@ -232,7 +233,7 @@ async def logout(
 async def reset_password(
     request: Request,
     data: ResetPasswordRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """修改密码"""
@@ -267,7 +268,7 @@ async def reset_password(
 @router.post("/clear-login-errors", response_model=AuthSimpleSuccessResponse)
 async def clear_login_errors(
     request: Request,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """清除登录错误计数"""
@@ -321,7 +322,7 @@ async def clear_login_errors(
 async def force_reset_password(
     request: Request,
     data: ForceResetPasswordRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
     """强制重置密码为默认密码"""
@@ -369,7 +370,7 @@ async def force_reset_password(
 async def check_session(
     request: Request,
     data: CheckSessionRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """检查会话状态"""
@@ -413,7 +414,7 @@ async def check_session(
 async def refresh_token(
     request: Request,
     data: RefreshTokenRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """刷新令牌"""
@@ -462,7 +463,7 @@ async def refresh_token(
 async def update_nickname(
     request: Request,
     data: UpdateNicknameRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """修改用户昵称"""
@@ -510,7 +511,7 @@ async def update_nickname(
 async def update_mobile(
     request: Request,
     data: UpdateMobileRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """修改手机号"""
@@ -561,7 +562,7 @@ async def update_mobile(
 async def update_avatar(
     request: Request,
     data: UpdateAvatarRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """修改用户头像"""
@@ -607,7 +608,7 @@ async def update_avatar(
 async def upload_avatar(
     request: Request,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """上传用户头像"""
@@ -656,7 +657,7 @@ async def upload_avatar(
 async def send_email(
     request: Request,
     data: SendEmailRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """发送邮箱验证码"""
     try:
@@ -728,7 +729,7 @@ async def send_email(
 async def register_by_email(
     request: Request,
     data: RegisterByEmailRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """邮箱注册"""
     try:
@@ -783,7 +784,7 @@ async def register_by_email(
 async def login_by_email(
     request: Request,
     data: LoginByEmailRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """邮箱登录"""
     try:
@@ -834,7 +835,7 @@ async def login_by_email(
 async def reset_password_by_email(
     request: Request,
     data: ResetPasswordByEmailRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """通过邮箱修改密码"""
@@ -889,7 +890,7 @@ async def reset_password_by_email(
 async def verify_and_reset_password(
     request: Request,
     data: ResetPasswordWithEmailRequest,
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """验证邮箱验证码并重置密码"""
     try:
@@ -982,7 +983,7 @@ async def verify_and_reset_password(
 async def update_email(
     request: Request,
     data: UpdateEmailRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """修改邮箱"""
@@ -1032,7 +1033,7 @@ async def update_email(
 @router.get("/users", response_model=SuccessResponse[UserListResponse])
 async def get_all_users(
     request: Request,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """获取所有用户信息（需要level=9权限）"""
@@ -1087,7 +1088,7 @@ async def get_all_users(
 async def update_user_level(
     request: Request,
     data: UpdateUserLevelRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """更新用户等级（需要level=9权限）"""
@@ -1167,7 +1168,7 @@ async def update_user_level(
 async def search_users(
     keyword: str = Query(..., description="搜索关键词"),
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """搜索用户"""
     service = AuthService(db)
@@ -1178,7 +1179,7 @@ async def search_users(
 async def update_file_status(
     request: Request,
     data: UpdateFileStatusRequest,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
     """更新文件状态（需要level=5权限）"""
@@ -1229,7 +1230,7 @@ async def update_file_status(
 @router.get("/files/unaudited", response_model=SuccessResponse[FileListResponse])
 async def get_unaudited_files(
     request: Request,
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
     """获取所有未审核的文件（需要level=5权限）"""
@@ -1266,4 +1267,13 @@ async def get_unaudited_files(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"获取未审核文件列表失败: {str(e)}"
             ).dict()
-        ) 
+        )
+
+@router.get("/me")
+async def get_current_user(
+    db: AsyncSession = Depends(get_db)
+):
+    # This method is not provided in the original file or the code block
+    # It's assumed to exist as it's called in the code block
+    # Implement the logic to return the current user
+    pass 

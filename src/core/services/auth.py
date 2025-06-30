@@ -11,12 +11,12 @@ from src.core.models.login_log import LoginLog
 from src.core.services.sms import SMSService
 import bcrypt
 import logging
-import redis
 from config.settings import settings
 from src.core.services.captcha import CaptchaService
 from fastapi import Request, UploadFile
 from src.core.services.email import EmailService
 from uuid import UUID
+from src.core.utils.redis import RedisManager
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +24,9 @@ class AuthService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.sms_service = SMSService(session)
-        self.redis = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            password=settings.REDIS_PASSWORD,
-            db=settings.REDIS_DB,
-            decode_responses=True
-        )
+        # 使用共享的 Redis 连接
+        redis_manager = RedisManager()
+        self.redis = redis_manager.get_redis()
 
     async def register(
         self,
