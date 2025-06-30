@@ -13,7 +13,7 @@ class RoomPlayer(Base):
     room_id = Column(UUID(as_uuid=True), ForeignKey("rooms.id"), nullable=False, comment="房间ID")
     user_id = Column(UUID(as_uuid=True), ForeignKey("User.id"), nullable=False, comment="用户ID")
     player_order = Column(Integer, nullable=False, comment="玩家顺序，1为房主")
-    status = Column(String(20), nullable=False, default="ready", comment="玩家状态：ready-准备, playing-游戏中, disconnected-断线, finished-已完成")
+    status = Column(String(20), nullable=False, default="ready", comment="玩家状态：waiting-等待, ready-准备, loading-加载中, gaming-游戏中, disconnected-断线, finished-已完成")
     deck_id = Column(UUID(as_uuid=True), ForeignKey("deck.id"), comment="使用的卡组ID")
     join_time = Column(DateTime(timezone=True), default=datetime.utcnow, comment="加入时间")
     leave_time = Column(DateTime(timezone=True), comment="离开时间")

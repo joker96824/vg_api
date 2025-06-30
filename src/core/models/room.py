@@ -12,7 +12,7 @@ class Room(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     room_name = Column(String(100), nullable=False, comment="房间名称")
     room_type = Column(String(20), nullable=False, default="public", comment="房间类型：public-公开, private-私密, ranked-排位")
-    status = Column(String(20), nullable=False, default="waiting", comment="房间状态：waiting-等待中, playing-游戏中, finished-已结束")
+    status = Column(String(20), nullable=False, default="waiting", comment="房间状态：waiting-等待中, loading-加载中, gaming-游戏中, finished-已结束")
     max_players = Column(Integer, nullable=False, default=2, comment="最大玩家数")
     current_players = Column(Integer, nullable=False, default=0, comment="当前玩家数")
     game_mode = Column(String(50), default="standard", comment="游戏模式：standard-标准, draft-轮抽, sealed-现开")

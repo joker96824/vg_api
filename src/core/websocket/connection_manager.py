@@ -360,6 +360,36 @@ class ConnectionManager:
             logger.error(f"发送游戏加载消息时发生错误: {str(e)}")
             return False
 
+    async def send_game_start(self, battle_id: str, room_id: str) -> bool:
+        """
+        发送游戏开始消息给房间中的所有玩家
+        
+        Args:
+            battle_id: 对战ID
+            room_id: 房间ID
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            # 先尝试在当前实例中查找房间玩家并发送
+            room_players = await self._get_room_players_in_instance(room_id)
+            
+            if room_players:
+                # 在当前实例中找到房间玩家，直接发送
+                logger.info(f"房间 {room_id} 的玩家在当前实例，直接发送游戏开始消息")
+                await self._send_game_start_local(battle_id, room_id, room_players)
+                return True
+            else:
+                # 房间玩家不在当前实例，通过Redis广播
+                logger.info(f"房间 {room_id} 的玩家不在当前实例，通过Redis广播游戏开始消息")
+                await self.redis_publisher.publish_game_start(battle_id, room_id)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送游戏开始消息时发生错误: {str(e)}")
+            return False
+
     async def send_room_kicked(self, room_id: str, target_user_id: str) -> bool:
         """
         发送房间踢出消息给指定的用户
@@ -808,4 +838,48 @@ class ConnectionManager:
             )
             
         except Exception as e:
-            logger.error(f"向房间玩家发送游戏加载消息时发生错误: {str(e)}") 
+            logger.error(f"向房间玩家发送游戏加载消息时发生错误: {str(e)}")
+
+    async def _send_game_start_local(self, battle_id: str, room_id: str, player_ids: list) -> None:
+        """
+        在当前实例中向房间玩家发送游戏开始消息
+        
+        Args:
+            battle_id: 对战ID
+            room_id: 房间ID
+            player_ids: 玩家ID列表
+        """
+        try:
+            message = {
+                "type": "game_start",
+                "battle_id": battle_id,
+                "room_id": room_id,
+                "current_game_state": {},  # 默认为空对象
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            logger.info(f"开始向房间 {room_id} 的玩家发送游戏开始消息")
+            
+            receivers = []
+            failed_receivers = []
+            
+            for user_id in player_ids:
+                if user_id in self.connections:
+                    try:
+                        websocket = self.connections[user_id]["websocket"]
+                        await websocket.send_json(message)
+                        receivers.append(user_id)
+                        logger.debug(f"成功发送游戏开始消息给用户 {user_id}")
+                    except Exception as e:
+                        logger.error(f"发送游戏开始消息给用户 {user_id} 时发生错误: {str(e)}")
+                        failed_receivers.append(user_id)
+                        
+            logger.info(
+                f"游戏开始消息发送完成: "
+                f"房间ID={room_id}, 对战ID={battle_id}, "
+                f"成功发送给 {len(receivers)} 个用户: {', '.join(receivers)}, "
+                f"失败 {len(failed_receivers)} 个用户: {', '.join(failed_receivers) if failed_receivers else '无'}"
+            )
+            
+        except Exception as e:
+            logger.error(f"向房间玩家发送游戏开始消息时发生错误: {str(e)}") 

@@ -7,7 +7,7 @@ from uuid import UUID
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 
 from ..utils.redis import set_key, get_key, delete_key, key_exists
 from ..models.room import Room
@@ -788,13 +788,47 @@ class MatchService:
             
             logger.info(f"玩家已添加到房间 - room_id: {db_room.id}")
             
+            # 创建对战记录
+            from .battle import BattleService
+            battle_service = BattleService(self.db)
+            battle = await battle_service.create_battle_from_room(db_room.id, "ranked")
+            
+            # 获取房间玩家列表用于记录操作
+            result = await self.db.execute(
+                select(RoomPlayer)
+                .where(
+                    and_(
+                        RoomPlayer.room_id == db_room.id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+                .order_by(RoomPlayer.player_order)
+            )
+            room_players = result.scalars().all()
+            
+            # 记录游戏开始操作
+            await battle_service.record_battle_action(
+                battle_id=battle.id,
+                player_id=owner_id,
+                action_type="game_start",
+                action_data={
+                    "room_id": str(db_room.id),
+                    "players": [str(p.user_id) for p in room_players],
+                    "battle_id": str(battle.id)
+                }
+            )
+            
             # 发送房间创建通知
             await self._notify_room_created(str(db_room.id), valid_users)
+            
+            # 发送游戏开始通知
+            await battle_service._notify_game_start(str(battle.id), str(db_room.id))
             
             return {
                 "room_id": db_room.id,
                 "room_name": db_room.room_name,
-                "matched_users": valid_users
+                "matched_users": valid_users,
+                "battle_id": str(battle.id)
             }
             
         except Exception as e:

@@ -205,6 +205,33 @@ class RedisPublisher:
             logger.error(f"发布游戏加载消息时发生错误: {str(e)}")
             raise
 
+    async def publish_game_start(self, battle_id: str, room_id: str) -> None:
+        """
+        发布游戏开始消息
+        
+        Args:
+            battle_id: 对战ID
+            room_id: 房间ID
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布游戏开始消息: 房间ID={room_id}, 对战ID={battle_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['room_update'],
+                json.dumps({
+                    'room_id': room_id,
+                    'battle_id': battle_id,
+                    'message_type': 'game_start'
+                })
+            )
+            logger.info(f"游戏开始消息已发布到 Redis: 房间ID={room_id}, 对战ID={battle_id}")
+            
+        except Exception as e:
+            logger.error(f"发布游戏开始消息时发生错误: {str(e)}")
+            raise
+
     async def publish_room_kicked(self, room_id: str, target_user_id: str) -> None:
         """
         发布房间踢出消息

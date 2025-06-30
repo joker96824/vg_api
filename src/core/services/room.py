@@ -720,7 +720,7 @@ class RoomService:
                 raise ValueError("用户不在房间中")
                 
             # 验证状态值
-            valid_statuses = ["waiting", "ready"]
+            valid_statuses = ["waiting", "ready", "gaming"]
             if status not in valid_statuses:
                 logger.warning(f"无效的状态值 - status: {status}")
                 raise ValueError(f"无效的状态值，只能是: {', '.join(valid_statuses)}")
@@ -824,10 +824,30 @@ class RoomService:
                 
             await self.db.commit()
             
+            # 创建对战记录
+            from .battle import BattleService
+            battle_service = BattleService(self.db)
+            battle = await battle_service.create_battle_from_room(room_id, "casual")
+            
+            # 记录游戏开始操作
+            await battle_service.record_battle_action(
+                battle_id=battle.id,
+                player_id=user_id,
+                action_type="game_start",
+                action_data={
+                    "room_id": str(room_id),
+                    "players": [str(p.user_id) for p in room_players],
+                    "battle_id": str(battle.id)
+                }
+            )
+            
             # 发送游戏加载通知
             await self._notify_game_loading(str(room_id))
             
-            logger.info(f"游戏加载开始成功 - room_id: {room_id}, user_id: {user_id}")
+            # 发送游戏开始通知
+            await battle_service._notify_game_start(str(battle.id), str(room_id))
+            
+            logger.info(f"游戏加载开始成功 - room_id: {room_id}, user_id: {user_id}, battle_id: {battle.id}")
             return True
             
         except Exception as e:
