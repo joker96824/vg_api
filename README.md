@@ -1,6 +1,7 @@
 # Vanguard API
 
 这是一个基于 FastAPI 构建的 Vanguard 卡牌游戏 API 服务。
+已更新到github
 
 ## 功能特点
 
