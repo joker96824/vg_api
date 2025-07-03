@@ -44,12 +44,25 @@ class BattleService:
             await self.db.commit()
             await self.db.refresh(battle)
             
+            logger.info(f"对战记录创建完成 - battle_id: {battle.id}, 初始current_game_state: {battle.current_game_state}")
+            
             # 使用GameStateManager初始化游戏状态
             logger.info(f"开始初始化游戏状态 - battle_id: {battle.id}, room_id: {room_id}")
             initial_game_state = await self.game_state_manager.initialize_game_state(
                 battle_id=battle.id,
                 room_id=room_id
             )
+            
+            logger.info(f"游戏状态初始化完成 - battle_id: {battle.id}, 游戏状态大小: {len(str(initial_game_state))} 字符")
+            
+            # 重新加载battle对象以获取最新的游戏状态
+            result = await self.db.execute(
+                select(Battle)
+                .where(Battle.id == battle.id)
+            )
+            battle = result.scalar_one()
+            
+            logger.info(f"重新加载battle对象完成 - battle_id: {battle.id}, current_game_state大小: {len(str(battle.current_game_state)) if battle.current_game_state else 0} 字符")
             
             logger.info(f"对战记录创建成功 - battle_id: {battle.id}")
             return battle
@@ -186,12 +199,22 @@ class BattleService:
             # 更新房间和玩家状态为gaming
             await self._update_room_and_players_to_gaming(UUID(room_id))
             
+            # 获取游戏状态
+            game_state = await self.game_state_manager.load_game_state(UUID(battle_id))
+            if not game_state:
+                logger.warning(f"游戏状态不存在，重新初始化 - battle_id: {battle_id}")
+                # 如果游戏状态不存在，重新初始化
+                game_state = await self.game_state_manager.initialize_game_state(
+                    battle_id=UUID(battle_id),
+                    room_id=UUID(room_id)
+                )
+            
             # 获取WebSocket连接管理器实例
             connection_manager = self._get_connection_manager()
             
-            # 发送游戏开始消息
-            await connection_manager.send_game_start(battle_id, room_id)
-            logger.info(f"游戏开始通知已发送: battle_id={battle_id}, room_id={room_id}")
+            # 发送游戏开始消息（包含游戏状态）
+            await connection_manager.send_game_start_with_state(battle_id, room_id, game_state)
+            logger.info(f"游戏开始通知已发送: battle_id={battle_id}, room_id={room_id}, 游戏状态大小: {len(str(game_state))} 字符")
             
         except Exception as e:
             logger.error(f"发送游戏开始通知时发生错误: {str(e)}")

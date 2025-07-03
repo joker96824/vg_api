@@ -301,6 +301,10 @@ class GameStateManager:
             )
             room_players = result.scalars().all()
             
+            logger.info(f"找到房间玩家数量: {len(room_players)}")
+            for i, player in enumerate(room_players):
+                logger.info(f"玩家{i+1}: user_id={player.user_id}, player_order={player.player_order}, status={player.status}")
+            
             if len(room_players) != 2:
                 raise ValueError("卡牌游戏需要恰好2个玩家")
             
@@ -308,9 +312,10 @@ class GameStateManager:
             players = []
             player_fields = {}
             
-            for room_player in room_players:
+            for i, room_player in enumerate(room_players):
                 user_id = room_player.user_id
                 players.append(user_id)
+                logger.info(f"处理玩家{i+1} - user_id: {user_id}")
                 
                 # 获取用户的preset=0的卡组
                 deck_result = await self.db.execute(
@@ -326,7 +331,10 @@ class GameStateManager:
                 deck = deck_result.scalar_one_or_none()
                 
                 if not deck:
+                    logger.error(f"用户 {user_id} 没有preset=0的卡组")
                     raise ValueError(f"用户 {user_id} 没有preset=0的卡组")
+                
+                logger.info(f"玩家{i+1}的卡组: deck_id={deck.id}, deck_name={deck.deck_name}")
                 
                 # 获取卡组中的所有卡牌
                 deck_cards_result = await self.db.execute(
@@ -340,11 +348,15 @@ class GameStateManager:
                 )
                 deck_cards = deck_cards_result.scalars().all()
                 
+                logger.info(f"玩家{i+1}的卡组中有 {len(deck_cards)} 张卡牌")
+                
                 # 初始化玩家场面
                 player_field = self._create_empty_field()
                 
                 # 根据deck_zone将卡牌分配到不同区域
                 for deck_card in deck_cards:
+                    logger.debug(f"处理卡牌: card_id={deck_card.card_id}, deck_zone={deck_card.deck_zone}, quantity={deck_card.quantity}")
+                    
                     # 获取卡牌基础信息
                     card_result = await self.db.execute(
                         select(Card)
@@ -422,8 +434,15 @@ class GameStateManager:
                     # 根据quantity添加多个Card对象
                     for _ in range(deck_card.quantity):
                         player_field[target_area].append(card_object)
+                    
+                    logger.debug(f"卡牌已分配到区域 {target_area}, 当前区域卡牌数: {len(player_field[target_area])}")
                 
-                player_fields[f"player{len(players)}_field"] = player_field
+                # 使用正确的玩家索引
+                player_fields[f"player{i+1}_field"] = player_field
+                logger.info(f"玩家{i+1}场面初始化完成，各区域卡牌数:")
+                for area, cards in player_field.items():
+                    if isinstance(cards, list):
+                        logger.info(f"  {area}: {len(cards)} 张卡牌")
             
             # 创建初始游戏状态
             initial_state = {
@@ -441,8 +460,13 @@ class GameStateManager:
                 "updated_at": datetime.utcnow().isoformat()
             }
             
+            logger.info(f"初始游戏状态创建完成，包含字段: {list(initial_state.keys())}")
+            
             # 保存到数据库
-            await self.save_game_state(battle_id, initial_state)
+            save_success = await self.save_game_state(battle_id, initial_state)
+            if not save_success:
+                logger.error(f"保存游戏状态失败 - battle_id: {battle_id}")
+                raise ValueError("保存游戏状态失败")
             
             logger.info(f"游戏状态初始化成功 - battle_id: {battle_id}, room_id: {room_id}")
             return initial_state
@@ -462,7 +486,7 @@ class GameStateManager:
             保存是否成功
         """
         try:
-            logger.debug(f"保存游戏状态 - battle_id: {battle_id}")
+            logger.info(f"保存游戏状态 - battle_id: {battle_id}, 游戏状态大小: {len(str(game_state))} 字符")
             
             # 更新游戏状态的更新时间
             game_state["updated_at"] = datetime.utcnow().isoformat()
@@ -482,9 +506,14 @@ class GameStateManager:
                 )
             )
             
+            # 检查更新是否成功
+            if result.rowcount == 0:
+                logger.error(f"没有找到要更新的对战记录 - battle_id: {battle_id}")
+                return False
+            
             await self.db.commit()
             
-            logger.debug(f"游戏状态保存成功 - battle_id: {battle_id}")
+            logger.info(f"游戏状态保存成功 - battle_id: {battle_id}, 更新行数: {result.rowcount}")
             return True
             
         except Exception as e:
