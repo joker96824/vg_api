@@ -370,6 +370,10 @@ class DeckService:
             if not deck:
                 return False, ["卡组不存在"]
 
+            # 在检查前先获取原来的preset值
+            original_preset = deck.preset
+            logger.info(f"检查卡组合规性 - deck_id: {deck_id}, 原始preset值: {original_preset}")
+
             # 获取卡组中的所有卡牌
             query = select(DeckCard).where(
                 and_(
@@ -594,7 +598,21 @@ class DeckService:
             # 在返回结果前更新数据库中的is_valid字段
             is_valid = len(problems) == 0
             deck.is_valid = is_valid
-            deck.preset = 1 if is_valid else -1
+            
+            # 根据原始preset值和验证结果设置preset值
+            if is_valid:
+                # 如果验证合规，保持原来的preset值（特别是preset=0的情况）
+                if original_preset == 0:
+                    deck.preset = 0  # 保持为出战卡组
+                    logger.info(f"卡组验证合规，保持preset=0（出战卡组）")
+                else:
+                    deck.preset = 1  # 其他情况设为1
+                    logger.info(f"卡组验证合规，设置preset=1")
+            else:
+                # 如果验证不合规，设为-1
+                deck.preset = -1
+                logger.info(f"卡组验证不合规，设置preset=-1")
+            
             deck.update_time = datetime.now()
             deck.remark = ";".join(problems)
             await self.db.commit()

@@ -720,7 +720,7 @@ class RoomService:
                 raise ValueError("用户不在房间中")
                 
             # 验证状态值
-            valid_statuses = ["waiting", "ready", "gaming"]
+            valid_statuses = ["waiting", "ready", "loading", "gaming", "disconnected", "finished"]
             if status not in valid_statuses:
                 logger.warning(f"无效的状态值 - status: {status}")
                 raise ValueError(f"无效的状态值，只能是: {', '.join(valid_statuses)}")
@@ -755,7 +755,7 @@ class RoomService:
                 raise ValueError("房间不存在")
                 
             # 检查房间状态
-            if db_room.status != "waiting":
+            if db_room.status not in ["waiting", "loading"]:
                 logger.warning(f"房间状态不允许开始游戏加载 - room_id: {room_id}, status: {db_room.status}")
                 raise ValueError("房间状态不允许开始游戏加载")
                 
