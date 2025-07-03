@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import cards, decks, auth, friendship, websocket, rooms, match
+from .endpoints import cards, decks, auth, friendship, websocket, rooms, match, battles
 from . import card_import
 
 api_router = APIRouter()
@@ -24,6 +24,9 @@ api_router.include_router(rooms.router, tags=["rooms"])
 
 # 注册匹配相关路由
 api_router.include_router(match.router, tags=["match"])
+
+# 注册对战相关路由
+api_router.include_router(battles.router, tags=["battles"])
 
 # 注册WebSocket路由
 api_router.include_router(websocket.router, tags=["websocket"])

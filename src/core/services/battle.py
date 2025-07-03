@@ -162,6 +162,58 @@ class BattleService:
         )
         return result.scalar_one_or_none()
 
+    async def get_current_battle_by_user(self, user_id: UUID) -> Optional[Battle]:
+        """根据用户ID获取当前对战记录
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            当前对战记录，如果用户没有进行中的对战则返回None
+        """
+        try:
+            logger.info(f"开始获取用户当前对战 - user_id: {user_id}")
+            
+            # 通过RoomPlayer表查找用户当前所在的房间
+            result = await self.db.execute(
+                select(RoomPlayer)
+                .where(
+                    and_(
+                        RoomPlayer.user_id == user_id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+                .order_by(desc(RoomPlayer.create_time))
+            )
+            room_player = result.scalar_one_or_none()
+            
+            if not room_player:
+                logger.info(f"用户不在任何房间中 - user_id: {user_id}")
+                return None
+            
+            logger.info(f"用户所在房间 - user_id: {user_id}, room_id: {room_player.room_id}, player_status: {room_player.status}")
+            
+            # 根据房间ID获取最新的对战记录
+            battle = await self.get_battle_by_room(room_player.room_id)
+            
+            if not battle:
+                logger.info(f"房间中没有对战记录 - user_id: {user_id}, room_id: {room_player.room_id}")
+                return None
+            
+            logger.info(f"找到对战记录 - user_id: {user_id}, battle_id: {battle.id}, battle_status: {battle.status}")
+            
+            # 检查对战状态：允许active和gaming状态
+            if battle.status in ["active", "gaming"]:
+                logger.info(f"找到用户当前对战 - user_id: {user_id}, battle_id: {battle.id}, room_id: {battle.room_id}, status: {battle.status}")
+                return battle
+            else:
+                logger.info(f"对战状态不是进行中 - user_id: {user_id}, room_id: {room_player.room_id}, battle_status: {battle.status}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"获取用户当前对战失败 - user_id: {user_id}, 错误: {str(e)}")
+            return None
+
     async def update_battle_status(self, battle_id: UUID, status: str, 
                                  winner_id: UUID = None) -> Optional[Battle]:
         """更新对战状态"""
@@ -199,7 +251,7 @@ class BattleService:
             # 更新房间和玩家状态为gaming
             await self._update_room_and_players_to_gaming(UUID(room_id))
             
-            # 获取游戏状态
+            # 确保游戏状态已初始化（如果不存在则初始化）
             game_state = await self.game_state_manager.load_game_state(UUID(battle_id))
             if not game_state:
                 logger.warning(f"游戏状态不存在，重新初始化 - battle_id: {battle_id}")
@@ -208,13 +260,14 @@ class BattleService:
                     battle_id=UUID(battle_id),
                     room_id=UUID(room_id)
                 )
+                logger.info(f"游戏状态初始化完成 - battle_id: {battle_id}, 状态大小: {len(str(game_state))} 字符")
             
             # 获取WebSocket连接管理器实例
             connection_manager = self._get_connection_manager()
             
-            # 发送游戏开始消息（包含游戏状态）
-            await connection_manager.send_game_start_with_state(battle_id, room_id, game_state)
-            logger.info(f"游戏开始通知已发送: battle_id={battle_id}, room_id={room_id}, 游戏状态大小: {len(str(game_state))} 字符")
+            # 发送游戏开始消息（不包含游戏状态，前端通过HTTP接口获取）
+            await connection_manager.send_game_start(battle_id, room_id)
+            logger.info(f"游戏开始通知已发送: battle_id={battle_id}, room_id={room_id}")
             
         except Exception as e:
             logger.error(f"发送游戏开始通知时发生错误: {str(e)}")

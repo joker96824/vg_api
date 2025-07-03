@@ -99,7 +99,6 @@ class RedisMessageHandler:
             room_id = message_data.get('room_id')
             message_type = message_data.get('message_type', 'room_update')
             battle_id = message_data.get('battle_id')
-            game_state = message_data.get('game_state')
             
             if room_id:
                 logger.info(f"处理房间更新消息: 房间ID={room_id}, 消息类型={message_type}")
@@ -107,9 +106,7 @@ class RedisMessageHandler:
                 # 查找房间中的所有玩家并发送消息
                 room_players = await self._get_room_players(room_id)
                 if room_players:
-                    if message_type == 'game_start_with_state' and battle_id and game_state:
-                        await self._send_game_start_with_state_to_room_players(battle_id, room_id, room_players, game_state)
-                    elif message_type == 'game_start' and battle_id:
+                    if message_type == 'game_start' and battle_id:
                         await self._send_game_start_to_room_players(battle_id, room_id, room_players)
                     else:
                         await self._send_to_room_players(room_id, room_players, message_type)
@@ -293,55 +290,4 @@ class RedisMessageHandler:
             )
             
         except Exception as e:
-            logger.error(f"向房间玩家发送游戏开始消息时发生错误: {str(e)}")
-
-    async def _send_game_start_with_state_to_room_players(self, battle_id: str, room_id: str, player_ids: list, game_state: Dict[str, Any]) -> None:
-        """
-        向房间中的所有玩家发送游戏开始消息和游戏状态
-        
-        Args:
-            battle_id: 对战ID
-            room_id: 房间ID
-            player_ids: 玩家ID列表
-            game_state: 游戏状态
-        """
-        try:
-            # WebSocket层只负责消息传递，游戏状态应该在业务逻辑层准备好
-            message = {
-                "type": "game_start_with_state",
-                "battle_id": battle_id,
-                "room_id": room_id,
-                "game_state": game_state,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-                
-            # 记录开始发送
-            logger.info(f"开始向房间 {room_id} 的玩家发送游戏开始消息和游戏状态: 对战ID={battle_id}")
-            
-            # 记录接收者列表
-            receivers = []
-            failed_receivers = []
-            
-            for user_id in player_ids:
-                if user_id in self.connection_manager.connections:
-                    try:
-                        websocket = self.connection_manager.connections[user_id]["websocket"]
-                        await websocket.send_json(message)
-                        receivers.append(user_id)
-                        logger.debug(f"成功发送游戏开始消息和游戏状态给用户 {user_id}")
-                    except Exception as e:
-                        logger.error(f"发送游戏开始消息和游戏状态给用户 {user_id} 时发生错误: {str(e)}")
-                        failed_receivers.append(user_id)
-                else:
-                    logger.info(f"用户 {user_id} 不在当前实例")
-                    
-            # 记录发送结果
-            logger.info(
-                f"游戏开始消息和游戏状态发送完成: "
-                f"房间ID={room_id}, 对战ID={battle_id}, "
-                f"成功发送给 {len(receivers)} 个用户: {', '.join(receivers)}, "
-                f"失败 {len(failed_receivers)} 个用户: {', '.join(failed_receivers) if failed_receivers else '无'}"
-            )
-            
-        except Exception as e:
-            logger.error(f"向房间玩家发送游戏开始消息和游戏状态时发生错误: {str(e)}") 
+            logger.error(f"向房间玩家发送游戏开始消息时发生错误: {str(e)}") 
