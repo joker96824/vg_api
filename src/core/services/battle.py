@@ -33,7 +33,7 @@ class BattleService:
             battle = Battle(
                 room_id=room_id,
                 battle_type=battle_type,
-                status="active",
+                status="coin",  # 初始化为coin状态
                 start_time=datetime.utcnow(),
                 current_game_state={},  # 先创建空对象，后续由GameStateManager初始化
                 create_user_id=None,  # 暂时不设置，后续可以添加
@@ -202,8 +202,8 @@ class BattleService:
             
             logger.info(f"找到对战记录 - user_id: {user_id}, battle_id: {battle.id}, battle_status: {battle.status}")
             
-            # 检查对战状态：允许active和gaming状态
-            if battle.status in ["active", "gaming"]:
+            # 检查对战状态：允许coin、prepare、active状态
+            if battle.status in ["coin", "prepare", "active"]:
                 logger.info(f"找到用户当前对战 - user_id: {user_id}, battle_id: {battle.id}, room_id: {battle.room_id}, status: {battle.status}")
                 return battle
             else:
@@ -216,9 +216,23 @@ class BattleService:
 
     async def update_battle_status(self, battle_id: UUID, status: str, 
                                  winner_id: UUID = None) -> Optional[Battle]:
-        """更新对战状态"""
+        """更新对战状态
+        
+        Args:
+            battle_id: 对战ID
+            status: 新状态 (coin/prepare/active/finished)
+            winner_id: 获胜者ID（仅在status为finished时需要）
+            
+        Returns:
+            更新后的对战记录
+        """
         try:
             logger.info(f"更新对战状态 - battle_id: {battle_id}, status: {status}")
+            
+            # 验证状态值
+            valid_statuses = ["coin", "prepare", "active", "finished"]
+            if status not in valid_statuses:
+                raise ValueError(f"无效的对战状态，只能是: {', '.join(valid_statuses)}")
             
             battle = await self.get_battle(battle_id)
             if not battle:
@@ -434,4 +448,34 @@ class BattleService:
         Returns:
             清理是否成功
         """
-        return await self.game_state_manager.cleanup_game_state(battle_id) 
+        return await self.game_state_manager.cleanup_game_state(battle_id)
+
+    async def send_state_update_to_user(self, user_id: UUID, state_data: Dict[str, Any]) -> bool:
+        """发送游戏状态更新消息给指定用户
+        
+        Args:
+            user_id: 用户ID
+            state_data: 游戏状态数据
+            
+        Returns:
+            发送是否成功
+        """
+        try:
+            logger.info(f"发送游戏状态更新消息给用户 - user_id: {user_id}")
+            
+            # 获取WebSocket连接管理器实例
+            connection_manager = self._get_connection_manager()
+            
+            # 发送状态更新消息
+            success = await connection_manager.send_state_update(str(user_id), state_data)
+            
+            if success:
+                logger.info(f"游戏状态更新消息发送成功 - user_id: {user_id}")
+            else:
+                logger.warning(f"游戏状态更新消息发送失败 - user_id: {user_id}")
+                
+            return success
+            
+        except Exception as e:
+            logger.error(f"发送游戏状态更新消息时发生错误 - user_id: {user_id}, 错误: {str(e)}")
+            return False 

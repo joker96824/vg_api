@@ -328,7 +328,7 @@ class RedisPublisher:
         
         Args:
             user_id: 用户ID
-            timeout_data: 超时数据，包含超时消息等
+            timeout_data: 超时数据
         """
         try:
             # 发布消息到 Redis
@@ -350,6 +350,36 @@ class RedisPublisher:
             
         except Exception as e:
             logger.error(f"发布匹配超时消息时发生错误: {str(e)}")
+            raise
+
+    async def publish_state_update(self, user_id: str, state_data: Dict[str, Any]) -> None:
+        """
+        发布游戏状态更新消息
+        
+        Args:
+            user_id: 用户ID
+            state_data: 游戏状态数据
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布游戏状态更新消息: 用户ID={user_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['private'],
+                json.dumps({
+                    'target_user_id': user_id,
+                    'message': {
+                        'type': 'state_update',
+                        'data': state_data,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                })
+            )
+            logger.info(f"游戏状态更新消息已发布到 Redis: 用户ID={user_id}")
+            
+        except Exception as e:
+            logger.error(f"发布游戏状态更新消息时发生错误: {str(e)}")
             raise
 
     def add_channel(self, name: str, channel: str):

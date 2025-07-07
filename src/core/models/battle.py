@@ -12,7 +12,7 @@ class Battle(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     room_id = Column(UUID(as_uuid=True), ForeignKey("rooms.id"), nullable=False, comment="房间ID")
     battle_type = Column(String(20), nullable=False, default="casual", comment="对战类型：ranked-排位, casual-休闲, friendly-友谊赛")
-    status = Column(String(20), nullable=False, default="active", comment="对战状态：active-进行中, finished-已结束, cancelled-已取消")
+    status = Column(String(20), nullable=False, default="coin", comment="对战状态：coin-投币阶段, prepare-准备阶段, active-进行中，finished-已结束")
     winner_id = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="获胜者ID")
     start_time = Column(DateTime(timezone=True), default=datetime.utcnow, comment="开始时间")
     end_time = Column(DateTime(timezone=True), comment="结束时间")

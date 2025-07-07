@@ -13,7 +13,7 @@ class DeleteResponse(BaseModel):
 class RoomPlayerBase(BaseModel):
     """房间玩家基础模型"""
     player_order: int = Field(..., description="玩家顺序，1为房主")
-    status: str = Field("ready", description="玩家状态：ready-准备, playing-游戏中, disconnected-断线, finished-已完成")
+    status: str = Field("ready", description="玩家状态：waiting-等待, ready-准备, loading-加载中, gaming-游戏中, disconnected-断线, finished-已完成")
     deck_id: Optional[UUID] = Field(None, description="使用的卡组ID")
     remark: str = Field("", description="备注信息")
 
@@ -85,7 +85,7 @@ class RoomBase(BaseModel):
     """房间基础模型"""
     room_name: str = Field(..., description="房间名称")
     room_type: str = Field("public", description="房间类型：public-公开, private-私密, ranked-排位")
-    status: str = Field("waiting", description="房间状态：waiting-等待中, playing-游戏中, finished-已结束")
+    status: str = Field("waiting", description="房间状态：waiting-等待中, loading-加载中, gaming-游戏中")
     max_players: int = Field(2, ge=2, le=4, description="最大玩家数")
     current_players: int = Field(0, ge=0, description="当前玩家数")
     game_mode: str = Field("standard", description="游戏模式：standard-标准, draft-轮抽, sealed-现开")

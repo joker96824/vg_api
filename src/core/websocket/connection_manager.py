@@ -497,37 +497,74 @@ class ConnectionManager:
     
     async def send_match_timeout(self, user_id: str, timeout_data: Dict[str, Any]) -> bool:
         """
-        发送匹配超时通知给指定用户
+        发送匹配超时消息给指定用户
         
         Args:
             user_id: 用户ID
-            timeout_data: 超时数据，包含超时消息等
+            timeout_data: 超时数据
             
         Returns:
             bool: 发送是否成功
         """
         try:
+            message = {
+                "type": "match_timeout",
+                "data": timeout_data,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
             # 检查目标用户是否在当前实例
             if user_id in self.connections:
                 # 用户在当前实例，直接发送
-                logger.info(f"匹配超时用户 {user_id} 在当前实例，直接发送匹配超时消息")
-                message = {
-                    "type": "match_timeout",
-                    "data": timeout_data,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
+                logger.info(f"用户 {user_id} 在当前实例，直接发送匹配超时消息")
                 return await self.send_message(
                     self.connections[user_id]["websocket"],
                     message
                 )
             else:
                 # 用户不在当前实例，通过Redis发送
-                logger.info(f"匹配超时用户 {user_id} 不在当前实例，通过Redis发送匹配超时消息")
+                logger.info(f"用户 {user_id} 不在当前实例，通过Redis发送匹配超时消息")
                 await self.redis_publisher.publish_match_timeout(user_id, timeout_data)
                 return True
                 
         except Exception as e:
             logger.error(f"发送匹配超时消息时发生错误: {str(e)}")
+            return False
+
+    async def send_state_update(self, user_id: str, state_data: Dict[str, Any]) -> bool:
+        """
+        发送游戏状态更新消息给指定用户
+        
+        Args:
+            user_id: 用户ID
+            state_data: 游戏状态数据
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            message = {
+                "type": "state_update",
+                "data": state_data,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            # 检查目标用户是否在当前实例
+            if user_id in self.connections:
+                # 用户在当前实例，直接发送
+                logger.info(f"用户 {user_id} 在当前实例，直接发送状态更新消息")
+                return await self.send_message(
+                    self.connections[user_id]["websocket"],
+                    message
+                )
+            else:
+                # 用户不在当前实例，通过Redis发送
+                logger.info(f"用户 {user_id} 不在当前实例，通过Redis发送状态更新消息")
+                await self.redis_publisher.publish_state_update(user_id, state_data)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送状态更新消息时发生错误: {str(e)}")
             return False
             
     async def _get_room_players_in_instance(self, room_id: str) -> list:

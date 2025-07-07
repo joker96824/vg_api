@@ -44,11 +44,22 @@ async def query_current_battle_state(
                     房间ID=room_status["room_id"],
                     房间状态=room_status["status"]
                 )
+                
+                # 根据房间状态提供不同的错误信息
+                if room_status["status"] == "waiting":
+                    error_message = "您在房间中但游戏尚未开始"
+                elif room_status["status"] == "loading":
+                    error_message = "游戏正在加载中，请稍候"
+                elif room_status["status"] == "gaming":
+                    error_message = "游戏进行中，但对战状态异常"
+                else:
+                    error_message = f"您在房间中但游戏状态异常（房间状态：{room_status['status']}）"
+                
                 raise HTTPException(
                     status_code=404,
                     detail=ErrorResponse.create(
                         code=ResponseCode.NOT_FOUND,
-                        message=f"您在房间中但游戏尚未开始或已结束（房间状态：{room_status['status']}）"
+                        message=error_message
                     ).dict()
                 )
             else:
