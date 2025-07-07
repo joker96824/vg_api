@@ -1,9 +1,13 @@
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from src.core.database import Base
 import uuid
+
+def utc_now():
+    """返回当前UTC时间"""
+    return datetime.now(timezone.utc)
 
 class RoomPlayer(Base):
     """房间玩家模型"""
@@ -15,12 +19,12 @@ class RoomPlayer(Base):
     player_order = Column(Integer, nullable=False, comment="玩家顺序，1为房主")
     status = Column(String(20), nullable=False, default="ready", comment="玩家状态：waiting-等待, ready-准备, loading-加载中, gaming-游戏中, disconnected-断线, finished-已完成")
     deck_id = Column(UUID(as_uuid=True), ForeignKey("deck.id"), comment="使用的卡组ID")
-    join_time = Column(DateTime(timezone=True), default=datetime.utcnow, comment="加入时间")
+    join_time = Column(DateTime(timezone=True), default=utc_now, comment="加入时间")
     leave_time = Column(DateTime(timezone=True), comment="离开时间")
     create_user_id = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="创建用户ID")
     update_user_id = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="更新用户ID")
-    create_time = Column(DateTime(timezone=True), default=datetime.utcnow, comment="创建时间")
-    update_time = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    create_time = Column(DateTime(timezone=True), default=utc_now, comment="创建时间")
+    update_time = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, comment="更新时间")
     is_deleted = Column(Boolean, default=False, comment="是否删除")
     remark = Column(Text, default="", comment="备注")
     

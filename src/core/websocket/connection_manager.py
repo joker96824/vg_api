@@ -567,6 +567,44 @@ class ConnectionManager:
             logger.error(f"发送状态更新消息时发生错误: {str(e)}")
             return False
             
+    async def send_surrender_notification(self, user_id: str, battle_id: str, message: str) -> bool:
+        """
+        发送投降通知给指定用户
+        
+        Args:
+            user_id: 用户ID
+            battle_id: 对战ID
+            message: 投降消息
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            notification_message = {
+                "type": "surrender_notification",
+                "battle_id": battle_id,
+                "message": message,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            # 检查目标用户是否在当前实例
+            if user_id in self.connections:
+                # 用户在当前实例，直接发送
+                logger.info(f"用户 {user_id} 在当前实例，直接发送投降通知")
+                return await self.send_message(
+                    self.connections[user_id]["websocket"],
+                    notification_message
+                )
+            else:
+                # 用户不在当前实例，通过Redis发送
+                logger.info(f"用户 {user_id} 不在当前实例，通过Redis发送投降通知")
+                await self.redis_publisher.publish_surrender_notification(user_id, battle_id, message)
+                return True
+                
+        except Exception as e:
+            logger.error(f"发送投降通知时发生错误: {str(e)}")
+            return False
+            
     async def _get_room_players_in_instance(self, room_id: str) -> list:
         """
         获取当前实例中指定房间的玩家ID列表

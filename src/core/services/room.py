@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from uuid import UUID
 import logging
@@ -54,7 +54,7 @@ class RoomService:
                 user_id=user_id,
                 player_order=1,  # 房主为1号位
                 status="waiting",
-                join_time=datetime.utcnow(),
+                join_time=datetime.now(timezone.utc),  # 使用UTC时区
                 remark=""
             )
             self.db.add(room_player)
@@ -78,7 +78,7 @@ class RoomService:
             raise ValueError(f"创建房间失败: {str(e)}")
 
     async def get_room(self, room_id: UUID) -> Optional[Room]:
-        """获取房间详情"""
+        """获取房间详情（排除已软删除的房间）"""
         result = await self.db.execute(
             select(Room)
             .options(selectinload(Room.room_players))
@@ -99,7 +99,7 @@ class RoomService:
         return room
 
     async def _get_room_for_validation(self, room_id: UUID) -> Optional[Room]:
-        """获取房间信息用于密码验证（不隐藏密码）"""
+        """获取房间信息用于密码验证（不隐藏密码，排除已软删除的房间）"""
         result = await self.db.execute(
             select(Room)
             .options(selectinload(Room.room_players))
@@ -216,7 +216,7 @@ class RoomService:
                 setattr(db_room, field, value)
                 logger.info(f"更新房间字段: {field} = {value}")
 
-            db_room.update_time = datetime.utcnow()
+            db_room.update_time = datetime.now(timezone.utc)
             await self.db.commit()
             await self.db.refresh(db_room)
             
@@ -243,7 +243,7 @@ class RoomService:
 
             # 软删除房间
             db_room.is_deleted = True
-            db_room.update_time = datetime.utcnow()
+            db_room.update_time = datetime.now(timezone.utc)
             
             # 级联软删除房间中的所有玩家记录
             result = await self.db.execute(
@@ -259,7 +259,7 @@ class RoomService:
             
             for room_player in room_players:
                 room_player.is_deleted = True
-                room_player.update_time = datetime.utcnow()
+                room_player.update_time = datetime.now(timezone.utc)
                 logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
             
             await self.db.commit()
@@ -279,6 +279,12 @@ class RoomService:
         """加入房间"""
         try:
             logger.info(f"用户尝试加入房间 - room_id: {room_id}, user_id: {user_id}")
+            
+            # 检查用户是否已在其他房间中
+            existing_room_player = await self._get_user_active_room_player(user_id)
+            if existing_room_player and existing_room_player.room_id != room_id:
+                logger.warning(f"用户已在其他房间中 - user_id: {user_id}, existing_room_id: {existing_room_player.room_id}")
+                raise ValueError("您已在其他房间中，请先离开当前房间")
             
             # 检查房间是否存在（获取真实密码用于验证）
             db_room = await self._get_room_for_validation(room_id)
@@ -318,13 +324,13 @@ class RoomService:
                 logger.info(f"重新激活已删除的玩家记录 - room_id: {room_id}, user_id: {user_id}")
                 deleted_player.is_deleted = False
                 deleted_player.status = "waiting"
-                deleted_player.join_time = datetime.utcnow()
+                deleted_player.join_time = datetime.now(timezone.utc)
                 deleted_player.leave_time = None
-                deleted_player.update_time = datetime.utcnow()
+                deleted_player.update_time = datetime.now(timezone.utc)
                 
                 # 更新房间当前玩家数
                 db_room.current_players += 1
-                db_room.update_time = datetime.utcnow()
+                db_room.update_time = datetime.now(timezone.utc)
                 
                 await self.db.commit()
                 
@@ -345,14 +351,14 @@ class RoomService:
                     player_order=next_order,
                     status="waiting",
                     deck_id=None,  # 不设置卡组ID
-                    join_time=datetime.utcnow(),
+                    join_time=datetime.now(timezone.utc),
                     remark=""
                 )
                 self.db.add(room_player)
                 
                 # 更新房间当前玩家数
                 db_room.current_players += 1
-                db_room.update_time = datetime.utcnow()
+                db_room.update_time = datetime.now(timezone.utc)
                 
                 # 提交事务
                 await self.db.commit()
@@ -381,15 +387,15 @@ class RoomService:
                 
             # 软删除玩家记录
             room_player.is_deleted = True
-            room_player.leave_time = datetime.utcnow()
+            room_player.leave_time = datetime.now(timezone.utc)
             room_player.status = "disconnected"
-            room_player.update_time = datetime.utcnow()
+            room_player.update_time = datetime.now(timezone.utc)
             
             # 更新房间当前玩家数
             db_room = await self._get_room_for_validation(room_id)
             if db_room:
                 db_room.current_players = max(0, db_room.current_players - 1)
-                db_room.update_time = datetime.utcnow()
+                db_room.update_time = datetime.now(timezone.utc)
                 
                 # 如果房间空了，删除房间和所有玩家记录
                 if db_room.current_players == 0:
@@ -412,7 +418,7 @@ class RoomService:
                     
                     for room_player in room_players:
                         room_player.is_deleted = True
-                        room_player.update_time = datetime.utcnow()
+                        room_player.update_time = datetime.now(timezone.utc)
                         logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
                     
                     logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
@@ -463,6 +469,26 @@ class RoomService:
             .order_by(RoomPlayer.update_time.desc())  # 按更新时间倒序，取最新的记录
         )
         return result.scalar_one_or_none()
+
+    async def _get_user_active_room_player(self, user_id: UUID) -> Optional[RoomPlayer]:
+        """获取用户当前活跃的房间玩家记录（在任何房间中且未删除）"""
+        result = await self.db.execute(
+            select(RoomPlayer)
+            .options(selectinload(RoomPlayer.room))
+            .where(
+                and_(
+                    RoomPlayer.user_id == user_id,
+                    RoomPlayer.is_deleted == False
+                )
+            )
+            .order_by(RoomPlayer.create_time.desc())  # 按创建时间倒序，取最新的记录
+        )
+        room_player = result.scalar_one_or_none()
+        
+        # 检查房间是否存在且未删除
+        if room_player and room_player.room and not room_player.room.is_deleted:
+            return room_player
+        return None
 
     async def get_next_player_order(self, room_id: UUID) -> int:
         """获取下一个玩家顺序"""
@@ -649,13 +675,13 @@ class RoomService:
                 
             # 软删除目标玩家的房间记录
             target_player.is_deleted = True
-            target_player.leave_time = datetime.utcnow()
+            target_player.leave_time = datetime.now(timezone.utc)
             target_player.status = "kicked"
-            target_player.update_time = datetime.utcnow()
+            target_player.update_time = datetime.now(timezone.utc)
             
             # 更新房间当前玩家数
             db_room.current_players = max(0, db_room.current_players - 1)
-            db_room.update_time = datetime.utcnow()
+            db_room.update_time = datetime.now(timezone.utc)
             
             # 如果房间空了，删除房间
             if db_room.current_players == 0:
@@ -676,7 +702,7 @@ class RoomService:
                 
                 for room_player in room_players:
                     room_player.is_deleted = True
-                    room_player.update_time = datetime.utcnow()
+                    room_player.update_time = datetime.now(timezone.utc)
                     logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
                 
                 logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
@@ -728,7 +754,7 @@ class RoomService:
             # 更新玩家状态
             old_status = room_player.status
             room_player.status = status
-            room_player.update_time = datetime.utcnow()
+            room_player.update_time = datetime.now(timezone.utc)
             
             await self.db.commit()
             
@@ -811,16 +837,16 @@ class RoomService:
                     
                 # 更新房间玩家记录中的卡组ID
                 player.deck_id = battle_deck.id
-                player.update_time = datetime.utcnow()
+                player.update_time = datetime.now(timezone.utc)
                 
             # 更新房间状态为loading
             db_room.status = "loading"
-            db_room.update_time = datetime.utcnow()
+            db_room.update_time = datetime.now(timezone.utc)
             
             # 更新所有玩家状态为loading
             for player in room_players:
                 player.status = "loading"
-                player.update_time = datetime.utcnow()
+                player.update_time = datetime.now(timezone.utc)
                 
             await self.db.commit()
             
@@ -957,6 +983,65 @@ class RoomService:
             self._connection_manager = ConnectionManager()
         return self._connection_manager
 
+    async def finish_room(self, room_id: UUID) -> bool:
+        """房间正常结束，软删除房间和所有玩家记录
+        
+        Args:
+            room_id: 房间ID
+            
+        Returns:
+            操作是否成功
+        """
+        try:
+            logger.info(f"开始房间正常结束软删除 - room_id: {room_id}")
+            
+            # 检查房间是否存在
+            db_room = await self._get_room_for_validation(room_id)
+            if not db_room:
+                logger.warning(f"房间不存在 - room_id: {room_id}")
+                return False
+            
+            # 获取房间中的所有玩家
+            result = await self.db.execute(
+                select(RoomPlayer)
+                .where(
+                    and_(
+                        RoomPlayer.room_id == room_id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+                .order_by(RoomPlayer.player_order)
+            )
+            room_players = result.scalars().all()
+            
+            # 软删除房间
+            db_room.is_deleted = True
+            db_room.status = "finished"  # 标记为已结束
+            db_room.update_time = datetime.now(timezone.utc)
+            logger.info(f"软删除房间 - room_id: {room_id}")
+            
+            # 软删除所有房间玩家记录
+            for player in room_players:
+                player.is_deleted = True
+                player.status = "finished"  # 标记为已结束
+                player.leave_time = datetime.now(timezone.utc)
+                player.update_time = datetime.now(timezone.utc)
+                logger.info(f"软删除房间玩家记录 - room_player_id: {player.id}, user_id: {player.user_id}")
+            
+            # 提交事务
+            await self.db.commit()
+            
+            # 发送房间解散通知
+            await self._notify_room_dissolved(str(room_id))
+            
+            logger.info(f"房间正常结束软删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"房间正常结束软删除失败 - room_id: {room_id}, 错误: {str(e)}")
+            await self.db.rollback()
+            raise ValueError(f"房间正常结束软删除失败: {str(e)}")
+
 
 class RoomPlayerService:
     """房间玩家服务"""
@@ -972,7 +1057,7 @@ class RoomPlayerService:
             player_order=room_player.player_order,
             status=room_player.status,
             deck_id=room_player.deck_id,
-            join_time=datetime.utcnow(),
+            join_time=datetime.now(timezone.utc),
             remark=room_player.remark or ""
         )
         self.db.add(db_room_player)
@@ -1033,7 +1118,7 @@ class RoomPlayerService:
         for field, value in update_data.items():
             setattr(db_room_player, field, value)
 
-        db_room_player.update_time = datetime.utcnow()
+        db_room_player.update_time = datetime.now(timezone.utc)
         await self.db.commit()
         await self.db.refresh(db_room_player)
         return db_room_player
@@ -1045,6 +1130,6 @@ class RoomPlayerService:
             return False
 
         db_room_player.is_deleted = True
-        db_room_player.update_time = datetime.utcnow()
+        db_room_player.update_time = datetime.now(timezone.utc)
         await self.db.commit()
         return True 

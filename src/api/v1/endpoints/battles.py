@@ -296,4 +296,71 @@ async def get_battle(
                 code=ResponseCode.SERVER_ERROR,
                 message=f"获取对战详情失败: {str(e)}"
             ).dict()
+        )
+
+
+@router.post("/battles/surrender", summary="投降")
+async def surrender(
+    session: AsyncSession = Depends(get_session),
+    current_user: dict = Depends(get_current_user)
+):
+    """用户投降"""
+    try:
+        APILogger.log_request(
+            "用户投降",
+            用户ID=current_user["id"]
+        )
+        
+        battle_service = BattleService(session)
+        
+        # 获取用户当前对战
+        current_battle = await battle_service.get_current_battle_by_user(UUID(current_user["id"]))
+        
+        if not current_battle:
+            APILogger.log_warning(
+                "用户投降",
+                "用户没有进行中的对战",
+                用户ID=current_user["id"]
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.NOT_FOUND,
+                    message="您当前没有进行中的对战"
+                ).dict()
+            )
+        
+        # 处理投降
+        result = await battle_service.handle_surrender(
+            battle_id=current_battle.id,
+            surrender_user_id=UUID(current_user["id"])
+        )
+        
+        APILogger.log_response(
+            "用户投降",
+            用户ID=current_user["id"],
+            对战ID=str(current_battle.id)
+        )
+        
+        return SuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="投降成功",
+            data={
+                "battle_id": str(current_battle.id),
+                "room_id": str(current_battle.room_id),
+                "winner_id": result["winner_id"],
+                "surrender_user_id": str(current_user["id"])
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        APILogger.log_error("用户投降", e, 用户ID=current_user["id"])
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"投降失败: {str(e)}"
+            ).dict()
         ) 

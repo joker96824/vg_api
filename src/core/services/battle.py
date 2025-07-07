@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from uuid import UUID
 import logging
@@ -29,12 +29,18 @@ class BattleService:
         try:
             logger.info(f"开始创建对战记录 - room_id: {room_id}, battle_type: {battle_type}")
             
+            # 检查房间是否已有进行中的对战
+            existing_battle = await self.get_battle_by_room(room_id)
+            if existing_battle and existing_battle.status in ["coin", "prepare", "active"]:
+                logger.warning(f"房间已有进行中的对战 - room_id: {room_id}, battle_id: {existing_battle.id}, status: {existing_battle.status}")
+                raise ValueError("房间已有进行中的对战")
+            
             # 创建对战记录
             battle = Battle(
                 room_id=room_id,
                 battle_type=battle_type,
                 status="coin",  # 初始化为coin状态
-                start_time=datetime.utcnow(),
+                start_time=datetime.now(timezone.utc),  # 使用UTC时区
                 current_game_state={},  # 先创建空对象，后续由GameStateManager初始化
                 create_user_id=None,  # 暂时不设置，后续可以添加
                 update_user_id=None,  # 暂时不设置，后续可以添加
@@ -116,7 +122,7 @@ class BattleService:
                 action_type=action_type,
                 action_data=action_data,
                 game_state_after=game_state_after,  # 记录操作后的游戏状态
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),  # 使用UTC时区
                 create_user_id=player_id,
                 update_user_id=player_id,
                 remark=f"操作类型: {action_type}"
@@ -174,9 +180,10 @@ class BattleService:
         try:
             logger.info(f"开始获取用户当前对战 - user_id: {user_id}")
             
-            # 通过RoomPlayer表查找用户当前所在的房间
+            # 通过RoomPlayer表查找用户当前所在的房间（包含房间信息）
             result = await self.db.execute(
                 select(RoomPlayer)
+                .options(selectinload(RoomPlayer.room))
                 .where(
                     and_(
                         RoomPlayer.user_id == user_id,
@@ -189,6 +196,11 @@ class BattleService:
             
             if not room_player:
                 logger.info(f"用户不在任何房间中 - user_id: {user_id}")
+                return None
+            
+            # 检查房间是否存在且未删除
+            if not room_player.room or room_player.room.is_deleted:
+                logger.info(f"用户所在的房间已被删除 - user_id: {user_id}, room_id: {room_player.room_id}")
                 return None
             
             logger.info(f"用户所在房间 - user_id: {user_id}, room_id: {room_player.room_id}, player_status: {room_player.status}")
@@ -240,11 +252,11 @@ class BattleService:
                 return None
                 
             battle.status = status
-            battle.update_time = datetime.utcnow()
+            battle.update_time = datetime.now(timezone.utc)
             
             if status == "finished" and winner_id:
                 battle.winner_id = winner_id
-                battle.end_time = datetime.utcnow()
+                battle.end_time = datetime.now(timezone.utc)
                 if battle.start_time:
                     battle.duration_seconds = int((battle.end_time - battle.start_time).total_seconds())
             
@@ -304,7 +316,7 @@ class BattleService:
             room = result.scalar_one_or_none()
             if room:
                 room.status = "gaming"
-                room.update_time = datetime.utcnow()
+                room.update_time = datetime.now(timezone.utc)
                 logger.info(f"房间状态已更新为gaming - room_id: {room_id}")
             
             # 更新房间玩家状态
@@ -321,7 +333,7 @@ class BattleService:
             
             for player in room_players:
                 player.status = "gaming"
-                player.update_time = datetime.utcnow()
+                player.update_time = datetime.now(timezone.utc)
                 logger.info(f"玩家状态已更新为gaming - room_id: {room_id}, user_id: {player.user_id}")
             
             # 提交事务
@@ -478,4 +490,146 @@ class BattleService:
             
         except Exception as e:
             logger.error(f"发送游戏状态更新消息时发生错误 - user_id: {user_id}, 错误: {str(e)}")
-            return False 
+            return False
+
+    async def handle_surrender(self, battle_id: UUID, surrender_user_id: UUID) -> Dict[str, Any]:
+        """
+        处理用户投降
+        
+        Args:
+            battle_id: 对战ID
+            surrender_user_id: 投降用户ID
+            
+        Returns:
+            投降处理结果
+        """
+        try:
+            logger.info(f"处理用户投降 - battle_id: {battle_id}, surrender_user_id: {surrender_user_id}")
+            
+            # 获取对战信息
+            battle = await self.get_battle(battle_id)
+            if not battle:
+                raise ValueError("对战记录不存在")
+            
+            # 检查对战状态
+            if battle.status not in ["coin", "prepare", "active"]:
+                raise ValueError("对战状态不允许投降")
+            
+            # 获取房间玩家信息
+            result = await self.db.execute(
+                select(RoomPlayer)
+                .where(
+                    and_(
+                        RoomPlayer.room_id == battle.room_id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+                .order_by(RoomPlayer.player_order)
+            )
+            room_players = result.scalars().all()
+            
+            if len(room_players) != 2:
+                raise ValueError("房间玩家数量不正确")
+            
+            # 确定投降者和获胜者
+            surrender_player = None
+            winner_player = None
+            
+            for player in room_players:
+                if player.user_id == surrender_user_id:
+                    surrender_player = player
+                else:
+                    winner_player = player
+            
+            if not surrender_player:
+                raise ValueError("投降用户不在对战中")
+            
+            if not winner_player:
+                raise ValueError("无法确定获胜者")
+            
+            # 更新对战状态
+            updated_battle = await self.update_battle_status(
+                battle_id=battle_id,
+                status="finished",
+                winner_id=winner_player.user_id
+            )
+            
+            if not updated_battle:
+                raise ValueError("更新对战状态失败")
+            
+            # 软删除房间和所有房间玩家记录（游戏正常结束）
+            from ..models.room import Room
+            room_result = await self.db.execute(
+                select(Room).where(
+                    and_(
+                        Room.id == battle.room_id,
+                        Room.is_deleted == False
+                    )
+                )
+            )
+            room = room_result.scalar_one_or_none()
+            if room:
+                # 软删除房间
+                room.is_deleted = True
+                room.status = "finished"  # 标记为已结束
+                room.update_time = datetime.now(timezone.utc)
+                logger.info(f"软删除房间 - room_id: {room.id}")
+            
+            # 软删除所有房间玩家记录
+            for player in room_players:
+                player.is_deleted = True
+                player.status = "finished"  # 标记为已结束
+                player.leave_time = datetime.now(timezone.utc)
+                player.update_time = datetime.now(timezone.utc)
+                logger.info(f"软删除房间玩家记录 - room_player_id: {player.id}, user_id: {player.user_id}")
+            
+            # 提交事务
+            await self.db.commit()
+            
+            # 记录投降操作
+            await self.record_battle_action(
+                battle_id=battle_id,
+                player_id=surrender_user_id,
+                action_type="surrender",
+                action_data={
+                    "surrender_user_id": str(surrender_user_id),
+                    "winner_user_id": str(winner_player.user_id),
+                    "battle_status": "finished"
+                }
+            )
+            
+            # 发送投降通知
+            connection_manager = self._get_connection_manager()
+            
+            # 发送给投降者
+            await connection_manager.send_surrender_notification(
+                str(surrender_user_id),
+                battle_id=str(battle_id),
+                message="您已投降"
+            )
+            
+            # 发送给获胜者
+            await connection_manager.send_surrender_notification(
+                str(winner_player.user_id),
+                battle_id=str(battle_id),
+                message=f"对手已投降，您获胜了！"
+            )
+            
+            # 发送房间解散通知（因为房间已被软删除）
+            await connection_manager.send_room_dissolved(str(battle.room_id))
+            
+            logger.info(f"投降处理完成 - battle_id: {battle_id}, winner: {winner_player.user_id}, room_id: {battle.room_id} 已软删除")
+            
+            return {
+                "success": True,
+                "battle_id": str(battle_id),
+                "room_id": str(battle.room_id),
+                "surrender_user_id": str(surrender_user_id),
+                "winner_id": str(winner_player.user_id),
+                "battle_status": "finished"
+            }
+            
+        except Exception as e:
+            logger.error(f"处理投降失败 - battle_id: {battle_id}, surrender_user_id: {surrender_user_id}, 错误: {str(e)}")
+            await self.db.rollback()
+            raise ValueError(f"处理投降失败: {str(e)}") 

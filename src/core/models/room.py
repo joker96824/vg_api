@@ -1,9 +1,13 @@
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from src.core.database import Base
 import uuid
+
+def utc_now():
+    """返回当前UTC时间"""
+    return datetime.now(timezone.utc)
 
 class Room(Base):
     """房间模型"""
@@ -21,8 +25,8 @@ class Room(Base):
     created_by = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="创建者ID")
     create_user_id = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="创建用户ID")
     update_user_id = Column(UUID(as_uuid=True), ForeignKey("User.id"), comment="更新用户ID")
-    create_time = Column(DateTime(timezone=True), default=datetime.utcnow, comment="创建时间")
-    update_time = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    create_time = Column(DateTime(timezone=True), default=utc_now, comment="创建时间")
+    update_time = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, comment="更新时间")
     is_deleted = Column(Boolean, default=False, comment="是否删除")
     remark = Column(Text, comment="备注")
     

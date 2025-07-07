@@ -706,6 +706,60 @@ async def get_room_players(
         )
 
 
+@router.post("/rooms/{room_id}/finish", response_model=DeleteSuccessResponse, summary="房间正常结束")
+async def finish_room(
+    room_id: UUID,
+    session: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """房间正常结束，软删除房间和所有玩家记录"""
+    try:
+        APILogger.log_request(
+            "房间正常结束",
+            用户ID=current_user["id"],
+            房间ID=str(room_id)
+        )
+        
+        room_service = RoomService(session)
+        success = await room_service.finish_room(room_id)
+        
+        if not success:
+            APILogger.log_warning(
+                "房间正常结束",
+                "房间不存在或操作失败",
+                房间ID=str(room_id),
+                用户ID=current_user["id"]
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorResponse.create(
+                    code=ResponseCode.NOT_FOUND,
+                    message="房间不存在"
+                ).dict()
+            )
+            
+        APILogger.log_response(
+            "房间正常结束",
+            房间ID=str(room_id),
+            用户ID=current_user["id"]
+        )
+        
+        return DeleteSuccessResponse.create(
+            code=ResponseCode.SUCCESS,
+            message="房间正常结束成功",
+            data=DeleteResponse()
+        )
+    except Exception as e:
+        APILogger.log_error("房间正常结束", e, 用户ID=current_user["id"], 房间ID=str(room_id))
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse.create(
+                code=ResponseCode.SERVER_ERROR,
+                message=f"房间正常结束失败: {str(e)}"
+            ).dict()
+        )
+
+
 @router.post("/rooms/{room_id}/loading", response_model=DeleteSuccessResponse, summary="开始游戏加载")
 async def start_game_loading(
     room_id: UUID,
