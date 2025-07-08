@@ -203,28 +203,90 @@ class BattleService:
                 logger.info(f"用户所在的房间已被删除 - user_id: {user_id}, room_id: {room_player.room_id}")
                 return None
             
-            logger.info(f"用户所在房间 - user_id: {user_id}, room_id: {room_player.room_id}, player_status: {room_player.status}")
+            logger.info(f"用户所在房间 - user_id: {user_id}, room_id: {room_player.room_id}, player_status: {room_player.status}, room_status: {room_player.room.status}")
             
-            # 根据房间ID获取最新的对战记录
+            # 根据房间ID获取最新的未删除对战记录
             battle = await self.get_battle_by_room(room_player.room_id)
             
             if not battle:
-                logger.info(f"房间中没有对战记录 - user_id: {user_id}, room_id: {room_player.room_id}")
+                logger.info(f"房间中没有未删除的对战记录 - user_id: {user_id}, room_id: {room_player.room_id}")
+                
+                # 如果房间状态是gaming但没有对战记录，说明状态不一致，需要清理
+                if room_player.room.status == "gaming":
+                    logger.warning(f"房间状态不一致：房间状态为gaming但没有对战记录，开始清理 - user_id: {user_id}, room_id: {room_player.room_id}")
+                    await self._cleanup_inconsistent_room_state(room_player.room_id)
+                
                 return None
             
-            logger.info(f"找到对战记录 - user_id: {user_id}, battle_id: {battle.id}, battle_status: {battle.status}")
+            logger.info(f"找到对战记录 - user_id: {user_id}, battle_id: {battle.id}, battle_status: {battle.status}, is_deleted: {battle.is_deleted}")
             
-            # 检查对战状态：允许coin、prepare、active状态
+            # 检查对战状态：只允许coin、prepare、active状态（进行中的对战）
             if battle.status in ["coin", "prepare", "active"]:
-                logger.info(f"找到用户当前对战 - user_id: {user_id}, battle_id: {battle.id}, room_id: {battle.room_id}, status: {battle.status}")
+                logger.info(f"找到用户当前进行中的对战 - user_id: {user_id}, battle_id: {battle.id}, room_id: {battle.room_id}, status: {battle.status}")
                 return battle
             else:
                 logger.info(f"对战状态不是进行中 - user_id: {user_id}, room_id: {room_player.room_id}, battle_status: {battle.status}")
+                
+                # 如果房间状态是gaming但对战状态不是进行中，说明状态不一致，需要清理
+                if room_player.room.status == "gaming":
+                    logger.warning(f"房间状态不一致：房间状态为gaming但对战状态为{battle.status}，开始清理 - user_id: {user_id}, room_id: {room_player.room_id}, battle_id: {battle.id}")
+                    await self._cleanup_inconsistent_room_state(room_player.room_id)
+                
                 return None
                 
         except Exception as e:
             logger.error(f"获取用户当前对战失败 - user_id: {user_id}, 错误: {str(e)}")
             return None
+
+    async def _cleanup_inconsistent_room_state(self, room_id: UUID) -> None:
+        """清理不一致的房间状态
+        
+        Args:
+            room_id: 房间ID
+        """
+        try:
+            logger.info(f"开始清理不一致的房间状态 - room_id: {room_id}")
+            
+            # 更新房间状态为waiting
+            from ..models.room import Room
+            room_result = await self.db.execute(
+                select(Room).where(
+                    and_(
+                        Room.id == room_id,
+                        Room.is_deleted == False
+                    )
+                )
+            )
+            room = room_result.scalar_one_or_none()
+            if room:
+                room.status = "waiting"
+                room.update_time = datetime.now(timezone.utc)
+                logger.info(f"房间状态已重置为waiting - room_id: {room_id}")
+            
+            # 更新房间玩家状态为waiting
+            from ..models.room_player import RoomPlayer
+            player_result = await self.db.execute(
+                select(RoomPlayer).where(
+                    and_(
+                        RoomPlayer.room_id == room_id,
+                        RoomPlayer.is_deleted == False
+                    )
+                )
+            )
+            room_players = player_result.scalars().all()
+            
+            for player in room_players:
+                player.status = "waiting"
+                player.update_time = datetime.now(timezone.utc)
+                logger.info(f"玩家状态已重置为waiting - room_id: {room_id}, user_id: {player.user_id}")
+            
+            # 提交事务
+            await self.db.commit()
+            logger.info(f"房间状态清理完成 - room_id: {room_id}, 玩家数: {len(room_players)}")
+            
+        except Exception as e:
+            logger.error(f"清理房间状态失败 - room_id: {room_id}, 错误: {str(e)}")
+            await self.db.rollback()
 
     async def update_battle_status(self, battle_id: UUID, status: str, 
                                  winner_id: UUID = None) -> Optional[Battle]:
@@ -556,6 +618,11 @@ class BattleService:
             
             if not updated_battle:
                 raise ValueError("更新对战状态失败")
+            
+            # 软删除对战记录（游戏正常结束）
+            battle.is_deleted = True
+            battle.update_time = datetime.now(timezone.utc)
+            logger.info(f"软删除对战记录 - battle_id: {battle_id}")
             
             # 软删除房间和所有房间玩家记录（游戏正常结束）
             from ..models.room import Room

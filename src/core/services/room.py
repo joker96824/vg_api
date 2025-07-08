@@ -262,8 +262,27 @@ class RoomService:
                 room_player.update_time = datetime.now(timezone.utc)
                 logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
             
+            # 软删除房间相关的对战记录
+            from ..models.battle import Battle
+            battle_result = await self.db.execute(
+                select(Battle)
+                .where(
+                    and_(
+                        Battle.room_id == room_id,
+                        Battle.is_deleted == False
+                    )
+                )
+                .order_by(desc(Battle.create_time))
+            )
+            battles = battle_result.scalars().all()
+            
+            for battle in battles:
+                battle.is_deleted = True
+                battle.update_time = datetime.now(timezone.utc)
+                logger.info(f"软删除对战记录 - battle_id: {battle.id}, room_id: {room_id}")
+            
             await self.db.commit()
-            logger.info(f"房间删除成功 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
+            logger.info(f"房间删除成功 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}, 删除对战记录数: {len(battles)}")
             
             # 发送房间解散通知
             await self._notify_room_dissolved(str(room_id))
@@ -421,7 +440,26 @@ class RoomService:
                         room_player.update_time = datetime.now(timezone.utc)
                         logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
                     
-                    logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
+                    # 软删除房间相关的对战记录
+                    from ..models.battle import Battle
+                    battle_result = await self.db.execute(
+                        select(Battle)
+                        .where(
+                            and_(
+                                Battle.room_id == room_id,
+                                Battle.is_deleted == False
+                            )
+                        )
+                        .order_by(desc(Battle.create_time))
+                    )
+                    battles = battle_result.scalars().all()
+                    
+                    for battle in battles:
+                        battle.is_deleted = True
+                        battle.update_time = datetime.now(timezone.utc)
+                        logger.info(f"软删除对战记录 - battle_id: {battle.id}, room_id: {room_id}")
+                    
+                    logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}, 删除对战记录数: {len(battles)}")
             
             await self.db.commit()
             
@@ -705,7 +743,26 @@ class RoomService:
                     room_player.update_time = datetime.now(timezone.utc)
                     logger.info(f"软删除房间玩家记录 - room_player_id: {room_player.id}")
                 
-                logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
+                # 软删除房间相关的对战记录
+                from ..models.battle import Battle
+                battle_result = await self.db.execute(
+                    select(Battle)
+                    .where(
+                        and_(
+                            Battle.room_id == room_id,
+                            Battle.is_deleted == False
+                        )
+                    )
+                    .order_by(desc(Battle.create_time))
+                )
+                battles = battle_result.scalars().all()
+                
+                for battle in battles:
+                    battle.is_deleted = True
+                    battle.update_time = datetime.now(timezone.utc)
+                    logger.info(f"软删除对战记录 - battle_id: {battle.id}, room_id: {room_id}")
+                
+                logger.info(f"房间删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}, 删除对战记录数: {len(battles)}")
             
             await self.db.commit()
             
@@ -1028,13 +1085,32 @@ class RoomService:
                 player.update_time = datetime.now(timezone.utc)
                 logger.info(f"软删除房间玩家记录 - room_player_id: {player.id}, user_id: {player.user_id}")
             
+            # 软删除房间相关的对战记录
+            from ..models.battle import Battle
+            battle_result = await self.db.execute(
+                select(Battle)
+                .where(
+                    and_(
+                        Battle.room_id == room_id,
+                        Battle.is_deleted == False
+                    )
+                )
+                .order_by(desc(Battle.create_time))
+            )
+            battles = battle_result.scalars().all()
+            
+            for battle in battles:
+                battle.is_deleted = True
+                battle.update_time = datetime.now(timezone.utc)
+                logger.info(f"软删除对战记录 - battle_id: {battle.id}, room_id: {room_id}")
+            
             # 提交事务
             await self.db.commit()
             
             # 发送房间解散通知
             await self._notify_room_dissolved(str(room_id))
             
-            logger.info(f"房间正常结束软删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}")
+            logger.info(f"房间正常结束软删除完成 - room_id: {room_id}, 删除玩家记录数: {len(room_players)}, 删除对战记录数: {len(battles)}")
             return True
             
         except Exception as e:

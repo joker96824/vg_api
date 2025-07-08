@@ -382,6 +382,38 @@ class RedisPublisher:
             logger.error(f"发布游戏状态更新消息时发生错误: {str(e)}")
             raise
 
+    async def publish_surrender_notification(self, user_id: str, battle_id: str, message: str) -> None:
+        """
+        发布投降通知消息
+        
+        Args:
+            user_id: 用户ID
+            battle_id: 对战ID
+            message: 投降消息
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布投降通知消息: 用户ID={user_id}, 对战ID={battle_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['private'],
+                json.dumps({
+                    'target_user_id': user_id,
+                    'message': {
+                        'type': 'surrender_notification',
+                        'battle_id': battle_id,
+                        'message': message,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                })
+            )
+            logger.info(f"投降通知消息已发布到 Redis: 用户ID={user_id}, 对战ID={battle_id}")
+            
+        except Exception as e:
+            logger.error(f"发布投降通知消息时发生错误: {str(e)}")
+            raise
+
     def add_channel(self, name: str, channel: str):
         """
         添加发布频道

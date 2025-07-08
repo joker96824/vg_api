@@ -51,9 +51,10 @@ async def query_current_battle_state(
                 elif room_status["status"] == "loading":
                     error_message = "游戏正在加载中，请稍候"
                 elif room_status["status"] == "gaming":
-                    error_message = "游戏进行中，但对战状态异常"
+                    # 房间状态是gaming但没有对战，说明状态不一致，系统会自动清理
+                    error_message = "游戏状态异常，请重新进入房间"
                 else:
-                    error_message = f"您在房间中但游戏状态异常（房间状态：{room_status['status']}）"
+                    error_message = f"您在房间中但游戏状态异常（房间状态：{room_status['status']}），请重新进入房间"
                 
                 raise HTTPException(
                     status_code=404,
