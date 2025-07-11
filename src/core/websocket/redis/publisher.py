@@ -414,6 +414,36 @@ class RedisPublisher:
             logger.error(f"发布投降通知消息时发生错误: {str(e)}")
             raise
 
+    async def publish_coin_result(self, user_id: str, result_data: Dict[str, Any]) -> None:
+        """
+        发布猜拳结果消息
+        
+        Args:
+            user_id: 目标用户ID
+            result_data: 猜拳结果数据
+        """
+        try:
+            # 发布消息到 Redis
+            logger.info(f"发布猜拳结果消息: 用户ID={user_id}")
+            
+            # 使用同步方式发布消息
+            self.connection.redis.publish(
+                self._channels['private'],
+                json.dumps({
+                    'target_user_id': user_id,
+                    'message': {
+                        'type': 'coin_result',
+                        'data': result_data,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                })
+            )
+            logger.info(f"猜拳结果消息已发布到 Redis: 用户ID={user_id}")
+            
+        except Exception as e:
+            logger.error(f"发布猜拳结果消息时发生错误: {str(e)}")
+            raise
+
     def add_channel(self, name: str, channel: str):
         """
         添加发布频道

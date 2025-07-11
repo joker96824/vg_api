@@ -605,6 +605,67 @@ class ConnectionManager:
             logger.error(f"发送投降通知时发生错误: {str(e)}")
             return False
             
+    async def send_coin_result(self, owner_id: str, guest_id: str, result_data: Dict[str, Any]) -> bool:
+        """
+        发送猜拳结果消息给双方玩家
+        
+        Args:
+            owner_id: 房主ID
+            guest_id: 非房主ID
+            result_data: 猜拳结果数据
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            message = {
+                "type": "coin_result",
+                "data": result_data,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            success_count = 0
+            
+            # 发送给房主
+            if owner_id in self.connections:
+                try:
+                    await self.send_message(
+                        self.connections[owner_id]["websocket"],
+                        message
+                    )
+                    success_count += 1
+                    logger.info(f"成功发送猜拳结果给房主 {owner_id}")
+                except Exception as e:
+                    logger.error(f"发送猜拳结果给房主 {owner_id} 时发生错误: {str(e)}")
+            else:
+                # 房主不在当前实例，通过Redis发送
+                await self.redis_publisher.publish_coin_result(owner_id, result_data)
+                success_count += 1
+                logger.info(f"通过Redis发送猜拳结果给房主 {owner_id}")
+            
+            # 发送给非房主
+            if guest_id in self.connections:
+                try:
+                    await self.send_message(
+                        self.connections[guest_id]["websocket"],
+                        message
+                    )
+                    success_count += 1
+                    logger.info(f"成功发送猜拳结果给非房主 {guest_id}")
+                except Exception as e:
+                    logger.error(f"发送猜拳结果给非房主 {guest_id} 时发生错误: {str(e)}")
+            else:
+                # 非房主不在当前实例，通过Redis发送
+                await self.redis_publisher.publish_coin_result(guest_id, result_data)
+                success_count += 1
+                logger.info(f"通过Redis发送猜拳结果给非房主 {guest_id}")
+            
+            return success_count == 2
+            
+        except Exception as e:
+            logger.error(f"发送猜拳结果时发生错误: {str(e)}")
+            return False
+            
     async def _get_room_players_in_instance(self, room_id: str) -> list:
         """
         获取当前实例中指定房间的玩家ID列表

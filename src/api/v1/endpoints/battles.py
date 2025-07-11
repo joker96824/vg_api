@@ -9,6 +9,7 @@ from src.core.schemas.response import SuccessResponse, ErrorResponse, ResponseCo
 from src.core.auth import get_current_user
 from src.core.utils.logger import APILogger
 from src.core.services.room import RoomService
+from src.core.redis import get_redis_client
 
 router = APIRouter()
 
@@ -116,8 +117,98 @@ async def query_current_battle_state(
                 ).dict()
             )
         
-        # 暂时发送全部游戏状态内容
-        # 后续可以根据用户身份处理数据（如隐藏对手卡牌信息等）
+        # 构建返回数据
+        response_data = {
+            "battle_id": str(current_battle.id),
+            "room_id": str(current_battle.room_id),
+            "battle_type": current_battle.battle_type,
+            "status": current_battle.status,
+            "game_state": game_state
+        }
+        
+        # 如果是coin状态，添加猜拳相关信息
+        if current_battle.status == "coin":
+            try:
+                # 获取Redis客户端
+                redis_client = get_redis_client()
+                
+                # 初始化猜拳管理器
+                battle_service._init_coin_managers(redis_client)
+                
+                # 获取房间信息以确定房主
+                from src.core.models.room import Room
+                from sqlalchemy import select
+                room_result = await session.execute(
+                    select(Room).where(Room.id == current_battle.room_id)
+                )
+                room = room_result.scalar_one_or_none()
+                
+                if room:
+                    # 判断当前用户是否为房主
+                    is_owner = str(room.created_by) == current_user_id
+                    
+                    # 获取映射信息
+                    mapping = await battle_service.coin_game_manager.get_mapping(current_battle.room_id)
+                    
+                    # 获取房主选择
+                    owner_choice = None
+                    if room.created_by:
+                        owner_choice = await battle_service.coin_game_manager.get_user_choice(
+                            current_battle.room_id, 
+                            room.created_by
+                        )
+                    
+                    # 获取非房主选择
+                    guest_choice = None
+                    if not is_owner:
+                        guest_choice = await battle_service.coin_game_manager.get_user_choice(
+                            current_battle.room_id, 
+                            UUID(current_user["id"])
+                        )
+                    else:
+                        # 如果是房主，需要找到非房主的选择
+                        from src.core.models.room_player import RoomPlayer
+                        from sqlalchemy import and_
+                        player_result = await session.execute(
+                            select(RoomPlayer)
+                            .where(
+                                and_(
+                                    RoomPlayer.room_id == current_battle.room_id,
+                                    RoomPlayer.user_id != room.created_by,
+                                    RoomPlayer.is_deleted == False
+                                )
+                            )
+                        )
+                        guest_player = player_result.scalar_one_or_none()
+                        if guest_player:
+                            guest_choice = await battle_service.coin_game_manager.get_user_choice(
+                                current_battle.room_id, 
+                                guest_player.user_id
+                            )
+                    
+                    # 添加猜拳相关信息
+                    coin_data = {
+                        "is_owner": is_owner,
+                        "owner_choice": owner_choice,
+                        "guest_choice": guest_choice
+                    }
+                    
+                    # 如果两个人都选择了，添加映射信息
+                    if owner_choice is not None and guest_choice is not None:
+                        coin_data["mapping"] = mapping
+                    
+                    response_data["coin_game"] = coin_data
+                    
+            except Exception as e:
+                APILogger.log_warning(
+                    "查询当前用户对战游戏状态",
+                    "获取猜拳信息失败",
+                    用户ID=current_user["id"],
+                    对战ID=str(current_battle.id),
+                    错误=str(e)
+                )
+                # 猜拳信息获取失败不影响主流程
+                pass
         
         APILogger.log_response(
             "查询当前用户对战游戏状态",
@@ -128,13 +219,7 @@ async def query_current_battle_state(
         return SuccessResponse.create(
             code=ResponseCode.SUCCESS,
             message="查询游戏状态成功",
-            data={
-                "battle_id": str(current_battle.id),
-                "room_id": str(current_battle.room_id),
-                "battle_type": current_battle.battle_type,
-                "status": current_battle.status,
-                "game_state": game_state
-            }
+            data=response_data
         )
         
     except HTTPException:

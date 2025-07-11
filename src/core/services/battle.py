@@ -11,8 +11,14 @@ from ..models.battle import Battle
 from ..models.battle_action import BattleAction
 from ..models.room_player import RoomPlayer
 from .game_state_manager import GameStateManager
+from .coin_game_manager import CoinGameManager
+from .coin_timeout_manager import CoinTimeoutManager
 
 logger = logging.getLogger(__name__)
+
+def is_user_room_owner(room: Any, user_id: Any) -> bool:
+    """判断用户是否为房主（统一逻辑）"""
+    return str(room.created_by) == str(user_id)
 
 class BattleService:
     """对战服务"""
@@ -23,6 +29,17 @@ class BattleService:
         self._connection_manager = None
         # 初始化游戏状态管理器
         self.game_state_manager = GameStateManager(db)
+        
+        # 初始化猜拳管理器（需要Redis客户端）
+        # 这里暂时设为None，后续在需要时初始化
+        self.coin_game_manager = None
+        self.coin_timeout_manager = None
+        
+    def _init_coin_managers(self, redis_client):
+        """初始化猜拳管理器"""
+        if not self.coin_game_manager:
+            self.coin_game_manager = CoinGameManager(redis_client)
+            self.coin_timeout_manager = CoinTimeoutManager(self.coin_game_manager, self)
 
     async def create_battle_from_room(self, room_id: UUID, battle_type: str = "casual") -> Battle:
         """从房间创建对战记录"""
@@ -69,6 +86,18 @@ class BattleService:
             battle = result.scalar_one()
             
             logger.info(f"重新加载battle对象完成 - battle_id: {battle.id}, current_game_state大小: {len(str(battle.current_game_state)) if battle.current_game_state else 0} 字符")
+            
+            # 初始化猜拳游戏
+            try:
+                from src.core.redis import get_redis_client
+                redis_client = get_redis_client()
+                coin_result = await self.initialize_coin_game(room_id, redis_client)
+                if coin_result["success"]:
+                    logger.info(f"猜拳游戏初始化成功 - room_id: {room_id}")
+                else:
+                    logger.warning(f"猜拳游戏初始化失败 - room_id: {room_id}, 错误: {coin_result.get('error')}")
+            except Exception as e:
+                logger.error(f"猜拳游戏初始化异常 - room_id: {room_id}, 错误: {str(e)}")
             
             logger.info(f"对战记录创建成功 - battle_id: {battle.id}")
             return battle
@@ -699,4 +728,377 @@ class BattleService:
         except Exception as e:
             logger.error(f"处理投降失败 - battle_id: {battle_id}, surrender_user_id: {surrender_user_id}, 错误: {str(e)}")
             await self.db.rollback()
-            raise ValueError(f"处理投降失败: {str(e)}") 
+            raise ValueError(f"处理投降失败: {str(e)}")
+    
+    # 猜拳相关方法
+    async def initialize_coin_game(self, room_id: UUID, redis_client) -> Dict[str, Any]:
+        """
+        初始化猜拳游戏
+        
+        Args:
+            room_id: 房间ID
+            redis_client: Redis客户端
+            
+        Returns:
+            初始化结果
+        """
+        try:
+            logger.info(f"初始化猜拳游戏 - room_id: {room_id}")
+            
+            # 初始化猜拳管理器
+            self._init_coin_managers(redis_client)
+            
+            # 初始化猜拳游戏
+            result = await self.coin_game_manager.initialize_coin_game(room_id)
+            
+            if result["success"]:
+                # 获取房间信息以确定房主
+                from ..models.room import Room
+                room_result = await self.db.execute(
+                    select(Room).where(Room.id == room_id)
+                )
+                room = room_result.scalar_one_or_none()
+                if room:
+                    # 获取房间玩家信息
+                    room_players = await self._get_room_players(room_id)
+                    if len(room_players) == 2:
+                        owner_id = room.created_by  # 房主是房间创建者
+                        # 找到非房主玩家
+                        guest_id = None
+                        for player in room_players:
+                            if not is_user_room_owner(room, player.user_id):
+                                guest_id = player.user_id
+                                break
+                        
+                        if guest_id:
+                            # 安排房主超时任务
+                            await self.coin_timeout_manager.schedule_owner_timeout(room_id, owner_id, guest_id)
+                            
+                            logger.info(f"猜拳游戏初始化完成 - room_id: {room_id}, owner_id: {owner_id}, guest_id: {guest_id}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"初始化猜拳游戏失败 - room_id: {room_id}, 错误: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    async def make_coin_choice(self, room_id: UUID, user_id: UUID, choice: int, redis_client) -> Dict[str, Any]:
+        """
+        用户做出猜拳选择
+        
+        Args:
+            room_id: 房间ID
+            user_id: 用户ID
+            choice: 选择（1、2、3）
+            redis_client: Redis客户端
+            
+        Returns:
+            选择结果
+        """
+        try:
+            logger.info(f"用户做出猜拳选择 - room_id: {room_id}, user_id: {user_id}, choice: {choice}")
+            
+            # 初始化猜拳管理器
+            self._init_coin_managers(redis_client)
+            
+            # 检查对战状态
+            battle = await self.get_battle_by_room(room_id)
+            if not battle or battle.status != "coin":
+                return {
+                    "success": False,
+                    "error": "当前不在猜拳阶段"
+                }
+            
+            # 获取房间玩家信息
+            room_players = await self._get_room_players(room_id)
+            if len(room_players) != 2:
+                return {
+                    "success": False,
+                    "error": "房间玩家数量不正确"
+                }
+            
+            # 获取房间信息以确定房主
+            from ..models.room import Room
+            room_result = await self.db.execute(
+                select(Room).where(Room.id == room_id)
+            )
+            room = room_result.scalar_one_or_none()
+            if not room:
+                return {
+                    "success": False,
+                    "error": "房间不存在"
+                }
+            
+            # 判断是否是房主（统一调用）
+            is_owner = is_user_room_owner(room, user_id)
+            
+            # 执行选择
+            result = await self.coin_game_manager.make_choice_with_owner_id(
+                room_id, 
+                user_id, 
+                choice, 
+                is_owner, 
+                room.created_by if not is_owner else None
+            )
+            
+            if result["success"]:
+                if is_owner:
+                    # 房主选择成功，取消房主超时任务，安排非房主超时任务
+                    # 找到非房主玩家
+                    guest_id = None
+                    for player in room_players:
+                        if not is_user_room_owner(room, player.user_id):
+                            guest_id = player.user_id
+                            break
+                    
+                    if guest_id:
+                        await self.coin_timeout_manager.cancel_owner_timeout(room_id)
+                        await self.coin_timeout_manager.schedule_guest_timeout(room_id, user_id, guest_id)
+                        
+                        # 获取映射信息用于WebSocket消息
+                        mapping = await self.coin_game_manager.get_mapping(room_id)
+                        gesture = mapping[str(choice)] if mapping else "未知"
+                        
+                        # 发送update_state消息给房主（确认选择）
+                        await self._send_update_state_to_owner(room_id, user_id, choice, gesture)
+                        
+                        # 发送update_state消息给非房主（房主已选择）
+                        await self._send_update_state_to_guest(room_id, guest_id, choice)
+                    
+                else:
+                    # 非房主选择成功
+                    # 获取映射信息用于WebSocket消息
+                    mapping = await self.coin_game_manager.get_mapping(room_id)
+                    gesture = mapping[str(choice)] if mapping else "未知"
+                    
+                    # 发送update_state消息给非房主（确认选择）
+                    await self._send_update_state_to_guest_after_choice(room_id, user_id, choice, gesture)
+                    
+                    # 发送update_state消息给房主（非房主已选择）
+                    await self._send_update_state_to_owner_after_guest_choice(room_id, room.created_by, choice, gesture)
+                    
+                    # 处理猜拳结果（发送coin_result消息）
+                    owner_id = room.created_by
+                    await self._handle_coin_result(room_id, owner_id, user_id, result)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"用户猜拳选择失败 - room_id: {room_id}, user_id: {user_id}, 错误: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    async def get_coin_game_status(self, room_id: UUID, redis_client) -> Dict[str, Any]:
+        """
+        获取猜拳游戏状态
+        
+        Args:
+            room_id: 房间ID
+            redis_client: Redis客户端
+            
+        Returns:
+            猜拳游戏状态
+        """
+        try:
+            # 初始化猜拳管理器
+            self._init_coin_managers(redis_client)
+            
+            # 获取基础状态
+            status = await self.coin_game_manager.get_coin_game_status(room_id)
+            
+            # 获取对战状态
+            battle = await self.get_battle_by_room(room_id)
+            if battle:
+                status["battle_status"] = battle.status
+                status["battle_id"] = str(battle.id)
+            
+            return status
+            
+        except Exception as e:
+            logger.error(f"获取猜拳游戏状态失败 - room_id: {room_id}, 错误: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+    
+    async def _get_room_players(self, room_id: UUID) -> List[RoomPlayer]:
+        """获取房间玩家列表"""
+        result = await self.db.execute(
+            select(RoomPlayer)
+            .where(
+                and_(
+                    RoomPlayer.room_id == room_id,
+                    RoomPlayer.is_deleted == False
+                )
+            )
+            .order_by(RoomPlayer.player_order)
+        )
+        return result.scalars().all()
+    
+    async def _send_update_state_to_owner(self, room_id: UUID, owner_id: UUID, choice: int, gesture: str) -> None:
+        """发送update_state消息给房主"""
+        try:
+            connection_manager = self._get_connection_manager()
+            await connection_manager.send_state_update(
+                str(owner_id),
+                {
+                    "type": "update_state",
+                    "room_id": str(room_id),
+                    "choice": choice,
+                    "gesture": gesture,
+                    "is_auto": False,
+                    "message": "选择已保存，等待对手选择"
+                }
+            )
+            logger.info(f"已发送update_state消息给房主 - room_id: {room_id}, owner_id: {owner_id}, choice: {choice}")
+        except Exception as e:
+            logger.error(f"发送update_state消息给房主失败 - room_id: {room_id}, owner_id: {owner_id}, 错误: {str(e)}")
+    
+    async def _send_update_state_to_guest(self, room_id: UUID, guest_id: UUID, owner_choice: int) -> None:
+        """发送update_state消息给非房主（房主已选择）"""
+        try:
+            connection_manager = self._get_connection_manager()
+            await connection_manager.send_state_update(
+                str(guest_id),
+                {
+                    "type": "update_state",
+                    "room_id": str(room_id),
+                    "owner_choice": owner_choice,
+                    "message": "房主已做出选择，请尽快选择"
+                }
+            )
+            logger.info(f"已发送update_state消息给非房主（房主已选择）- room_id: {room_id}, guest_id: {guest_id}")
+        except Exception as e:
+            logger.error(f"发送update_state消息给非房主失败 - room_id: {room_id}, guest_id: {guest_id}, 错误: {str(e)}")
+    
+    async def _send_update_state_to_guest_after_choice(self, room_id: UUID, guest_id: UUID, choice: int, gesture: str) -> None:
+        """发送update_state消息给非房主（非房主选择后）"""
+        try:
+            connection_manager = self._get_connection_manager()
+            await connection_manager.send_state_update(
+                str(guest_id),
+                {
+                    "type": "update_state",
+                    "room_id": str(room_id),
+                    "choice": choice,
+                    "gesture": gesture,
+                    "is_auto": False,
+                    "message": "选择已保存，等待结果"
+                }
+            )
+            logger.info(f"已发送update_state消息给非房主（选择后）- room_id: {room_id}, guest_id: {guest_id}, choice: {choice}")
+        except Exception as e:
+            logger.error(f"发送update_state消息给非房主失败 - room_id: {room_id}, guest_id: {guest_id}, 错误: {str(e)}")
+    
+    async def _send_update_state_to_owner_after_guest_choice(self, room_id: UUID, owner_id: UUID, choice: int, gesture: str) -> None:
+        """发送update_state消息给房主（非房主已选择）"""
+        try:
+            connection_manager = self._get_connection_manager()
+            await connection_manager.send_state_update(
+                str(owner_id),
+                {
+                    "type": "update_state",
+                    "room_id": str(room_id),
+                    "choice": choice,
+                    "gesture": gesture,
+                    "is_auto": False,
+                    "message": "对手已做出选择，请尽快选择"
+                }
+            )
+            logger.info(f"已发送update_state消息给房主（非房主已选择）- room_id: {room_id}, owner_id: {owner_id}, choice: {choice}")
+        except Exception as e:
+            logger.error(f"发送update_state消息给房主失败 - room_id: {room_id}, owner_id: {owner_id}, 错误: {str(e)}")
+    
+    async def _handle_coin_result(self, room_id: UUID, owner_id: UUID, guest_id: UUID, result: Dict[str, Any]) -> None:
+        """处理猜拳结果"""
+        try:
+            logger.info(f"处理猜拳结果 - room_id: {room_id}, owner_id: {owner_id}, guest_id: {guest_id}")
+            
+            # 发送猜拳结果消息给双方
+            connection_manager = self._get_connection_manager()
+            await connection_manager.send_coin_result(
+                str(owner_id),
+                str(guest_id),
+                {
+                    "type": "coin_result",
+                    "room_id": str(room_id),
+                    "owner_choice": result["owner_choice"],
+                    "guest_choice": result["guest_choice"],
+                    "owner_gesture": result["owner_gesture"],
+                    "guest_gesture": result["guest_gesture"],
+                    "mapping": result["mapping"],
+                    "winner": result["winner"],
+                    "loser": result["loser"],
+                    "result": result["result"],
+                    "message": result["result"]
+                }
+            )
+            
+            # 确定获胜者和失败者
+            winner_id = owner_id if result["winner"] == "owner" else guest_id
+            loser_id = guest_id if result["winner"] == "owner" else owner_id
+            
+            # 安排胜方选择先攻后攻的超时任务（30秒）
+            await self.coin_timeout_manager.schedule_first_player_timeout(room_id, winner_id, loser_id)
+            
+            logger.info(f"猜拳结果处理完成，等待胜方选择先攻后攻 - room_id: {room_id}, winner_id: {winner_id}")
+            
+        except Exception as e:
+            logger.error(f"处理猜拳结果失败 - room_id: {room_id}, 错误: {str(e)}")
+    
+    async def _update_battle_after_coin(self, room_id: UUID, winner_id: UUID, first_player: UUID) -> None:
+        """猜拳结束后更新对战状态"""
+        try:
+            # 获取对战记录
+            battle = await self.get_battle_by_room(room_id)
+            if not battle:
+                logger.error(f"找不到对战记录 - room_id: {room_id}")
+                return
+            
+            # 更新对战状态为prepare
+            await self.update_battle_status(battle.id, "prepare")
+            
+            # 更新游戏状态中的优先出牌玩家
+            game_state = await self.get_game_state(battle.id)
+            if game_state:
+                updates = {
+                    "first_player": str(first_player),
+                    "current_player": str(first_player)
+                }
+                await self.update_game_state(battle.id, updates)
+            
+            # 获取房间玩家信息用于发送WebSocket消息
+            room_players = await self._get_room_players(room_id)
+            if len(room_players) == 2:
+                # 发送state_update消息给双方
+                connection_manager = self._get_connection_manager()
+                
+                # 构建状态更新消息
+                state_update_data = {
+                    "type": "state_update",
+                    "room_id": str(room_id),
+                    "battle_id": str(battle.id),
+                    "battle_status": "prepare",
+                    "first_player": str(first_player),
+                    "current_player": str(first_player),
+                    "winner_id": str(winner_id),
+                    "message": "猜拳结束，游戏进入准备阶段"
+                }
+                
+                # 发送给所有房间玩家
+                for player in room_players:
+                    try:
+                        await connection_manager.send_state_update(str(player.user_id), state_update_data)
+                        logger.info(f"已发送state_update消息给玩家 - user_id: {player.user_id}, room_id: {room_id}")
+                    except Exception as e:
+                        logger.error(f"发送state_update消息给玩家失败 - user_id: {player.user_id}, room_id: {room_id}, 错误: {str(e)}")
+            
+            logger.info(f"对战状态已更新 - room_id: {room_id}, winner_id: {winner_id}, first_player: {first_player}")
+            
+        except Exception as e:
+            logger.error(f"更新对战状态失败 - room_id: {room_id}, 错误: {str(e)}") 
