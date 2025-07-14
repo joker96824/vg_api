@@ -4,18 +4,13 @@ import os
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from fastapi import Request
-import redis
+from src.core.redis import get_redis_client
 from config.settings import settings
 
 class CaptchaService:
     def __init__(self):
-        self.redis = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            password=settings.REDIS_PASSWORD,
-            db=settings.REDIS_DB,
-            decode_responses=True
-        )
+        # 使用统一的Redis连接
+        self.redis = get_redis_client()
 
     async def generate(self, request: Request) -> BytesIO:
         """生成图形验证码"""

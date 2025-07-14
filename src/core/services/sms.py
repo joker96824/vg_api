@@ -1,23 +1,18 @@
 import random
-import redis
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import settings
 import logging
+from src.core.redis import get_redis_client
 
 logger = logging.getLogger(__name__)
 
 class SMSService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.redis = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            password=settings.REDIS_PASSWORD,
-            db=settings.REDIS_DB,
-            decode_responses=True
-        )
+        # 使用统一的Redis连接
+        self.redis = get_redis_client()
 
     async def send_code(self, mobile: str, scene: str, ip: str) -> Dict[str, Any]:
         """发送验证码"""

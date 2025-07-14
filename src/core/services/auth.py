@@ -16,7 +16,7 @@ from src.core.services.captcha import CaptchaService
 from fastapi import Request, UploadFile
 from src.core.services.email import EmailService
 from uuid import UUID
-from src.core.utils.redis import RedisManager
+from src.core.redis import get_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,8 @@ class AuthService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.sms_service = SMSService(session)
-        # 使用共享的 Redis 连接
-        redis_manager = RedisManager()
-        self.redis = redis_manager.get_redis()
+        # 使用统一的Redis连接
+        self.redis = get_redis_client()
 
     async def register(
         self,

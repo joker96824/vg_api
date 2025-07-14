@@ -1,5 +1,4 @@
 import random
-import redis
 import logging
 from datetime import datetime, timedelta
 from config.settings import settings
@@ -8,6 +7,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from typing import List, Optional
+from src.core.redis import get_redis_client
 
 from ..config.email_config import email_settings
 
@@ -17,13 +17,8 @@ class EmailService:
     """邮件服务"""
     
     def __init__(self):
-        self.redis = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            password=settings.REDIS_PASSWORD,
-            db=settings.REDIS_DB,
-            decode_responses=True
-        )
+        # 使用统一的Redis连接
+        self.redis = get_redis_client()
         
         # 从settings加载邮件配置
         self.smtp_server = settings.EMAIL_SMTP_SERVER
