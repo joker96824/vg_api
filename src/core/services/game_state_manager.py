@@ -57,21 +57,23 @@ class GameStateManager:
         "ride": "骑升轴",
         "deck": "卡组",
         "hand": "手牌",
+        "drop": "弃牌区",
         "v": "先导者",
         "leftfront": "左前",
         "leftback": "左后",
         "rightfront": "右前",
         "rightback": "右后",
         "vback": "v后",
+        "g": "防守区",
         "damage": "伤害区",
         "instruction": "指令区",
         "trigger": "判定区",
         "coa": "纹章",
-        "g": "g区",
         "gdeck": "g卡组",
+        "spacetime": "时空区",
         "token": "衍生物",
         "seal": "封存",
-        "effect": "永续效果"
+        "effect": "永续效果"        
     }
     
     # Card结构定义
